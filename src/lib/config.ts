@@ -8,7 +8,7 @@ export const COLORS = {
 
 export const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbxlj8_wOmzv_4X4AHoeqWl-SFbl4vEO8QMehv39P0wv8f6IffZeqvTJ53niQHXjyjlAYw/exec'
 
-export const SHEET_TABS = ['daily', 'searchTerms'] as const
+export const SHEET_TABS = ['daily', 'searchTerms', 'adGroups'] as const
 export type SheetTab = typeof SHEET_TABS[number]
 
 export interface TabConfig {
@@ -41,6 +41,16 @@ export const TAB_CONFIGS: Record<SheetTab, TabConfig> = {
             cpa: { label: 'CPA', format: (val: number) => `$${val.toFixed(2)}` },
             roas: { label: 'ROAS', format: (val: number) => `${val.toFixed(2)}x` },
             aov: { label: 'AOV', format: (val: number) => `$${val.toFixed(2)}` }
+        }
+    },
+    adGroups: {
+        name: 'adGroups',
+        metrics: {
+            impr: { label: 'Impr', format: (val: number) => val.toLocaleString() },
+            clicks: { label: 'Clicks', format: (val: number) => val.toLocaleString() },
+            cost: { label: 'Cost', format: (val: number) => `$${val.toFixed(2)}` },
+            conv: { label: 'Conv', format: (val: number) => val.toFixed(1) },
+            value: { label: 'Value', format: (val: number) => `$${val.toFixed(2)}` }
         }
     }
 } 

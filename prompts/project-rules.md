@@ -56,9 +56,17 @@
 Follow the established directory structure:
 ```
 src/
-├── app/                    # Next.js 13+ app directory
-├── components/            # Reusable UI components
-└── lib/                   # Core logic and utilities
+├── 
+├── app/
+├── app/data-test
+├── app/settings
+├── app/terms
+├── components/
+├── components/providers
+├── components/ui
+├── hooks/
+├── lib/
+└── lib/contexts
 ```
 
 ## Error Handling

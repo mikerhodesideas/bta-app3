@@ -84,16 +84,16 @@ export default function TermsPage() {
                     <TableHeader>
                         <TableRow>
                             <TableHead className="w-[200px]">
-                                <SortButton field="search_term">Search Term</SortButton>
+                                <SortButton field="searchTerm">Search Term</SortButton>
                             </TableHead>
                             <TableHead>
                                 <SortButton field="campaign">Campaign</SortButton>
                             </TableHead>
                             <TableHead>
-                                <SortButton field="ad_group">Ad Group</SortButton>
+                                <SortButton field="adGroup">Ad Group</SortButton>
                             </TableHead>
                             <TableHead className="text-right">
-                                <SortButton field="impressions">Impr</SortButton>
+                                <SortButton field="impr">Impr</SortButton>
                             </TableHead>
                             <TableHead className="text-right">
                                 <SortButton field="clicks">Clicks</SortButton>
@@ -102,16 +102,16 @@ export default function TermsPage() {
                                 <SortButton field="cost">Cost</SortButton>
                             </TableHead>
                             <TableHead className="text-right">
-                                <SortButton field="conversions">Conv</SortButton>
+                                <SortButton field="conv">Conv</SortButton>
                             </TableHead>
                             <TableHead className="text-right">
-                                <SortButton field="conversion_value">Value</SortButton>
+                                <SortButton field="value">Value</SortButton>
                             </TableHead>
                             <TableHead className="text-right">
                                 <SortButton field="ctr">CTR</SortButton>
                             </TableHead>
                             <TableHead className="text-right">
-                                <SortButton field="conv_rate">CvR</SortButton>
+                                <SortButton field="convRate">CvR</SortButton>
                             </TableHead>
                             <TableHead className="text-right">
                                 <SortButton field="cpa">CPA</SortButton>
@@ -123,17 +123,17 @@ export default function TermsPage() {
                     </TableHeader>
                     <TableBody>
                         {sortedTerms.slice(0, 10).map((term, i) => (
-                            <TableRow key={`${term.search_term}-${i}`}>
-                                <TableCell className="font-medium">{term.search_term}</TableCell>
+                            <TableRow key={`${term.searchTerm}-${i}`}>
+                                <TableCell className="font-medium">{term.searchTerm}</TableCell>
                                 <TableCell>{term.campaign}</TableCell>
-                                <TableCell>{term.ad_group}</TableCell>
-                                <TableCell className="text-right">{formatNumber(term.impressions)}</TableCell>
+                                <TableCell>{term.adGroup}</TableCell>
+                                <TableCell className="text-right">{formatNumber(term.impr)}</TableCell>
                                 <TableCell className="text-right">{formatNumber(term.clicks)}</TableCell>
                                 <TableCell className="text-right">{formatCurrency(term.cost, settings.currency)}</TableCell>
-                                <TableCell className="text-right">{formatNumber(term.conversions)}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(term.conversion_value, settings.currency)}</TableCell>
+                                <TableCell className="text-right">{formatNumber(term.conv)}</TableCell>
+                                <TableCell className="text-right">{formatCurrency(term.value, settings.currency)}</TableCell>
                                 <TableCell className="text-right">{formatPercent(term.ctr * 100)}</TableCell>
-                                <TableCell className="text-right">{formatPercent(term.conv_rate * 100)}</TableCell>
+                                <TableCell className="text-right">{formatPercent(term.convRate * 100)}</TableCell>
                                 <TableCell className="text-right">{formatCurrency(term.cpa, settings.currency)}</TableCell>
                                 <TableCell className="text-right">{term.roas.toFixed(2)}x</TableCell>
                             </TableRow>

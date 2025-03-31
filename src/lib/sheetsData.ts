@@ -1,8 +1,8 @@
 // src/lib/sheetsData.ts
-import { AdMetric, Campaign, SearchTermMetric, TabData, isSearchTermMetric } from './types'
+import { AdMetric, Campaign, SearchTermMetric, TabData, AdGroupMetric, isSearchTermMetric } from './types'
 import { SHEET_TABS, SheetTab, TAB_CONFIGS, DEFAULT_SHEET_URL } from './config'
 
-async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[] | SearchTermMetric[]> {
+async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[] | SearchTermMetric[] | AdGroupMetric[]> {
   try {
     const urlWithTab = `${sheetUrl}?tab=${tab}`
     const response = await fetch(urlWithTab)
@@ -21,20 +21,34 @@ async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[]
     // Parse data based on tab type
     if (tab === 'searchTerms') {
       return rawData.map((row: any) => ({
-        search_term: String(row['search_term'] || ''),
+        searchTerm: String(row['searchTerm'] || ''),
         campaign: String(row['campaign'] || ''),
-        ad_group: String(row['ad_group'] || ''),
-        impressions: Number(row['impressions'] || 0),
+        adGroup: String(row['adGroup'] || ''),
+        impr: Number(row['impr'] || 0),
         clicks: Number(row['clicks'] || 0),
         cost: Number(row['cost'] || 0),
-        conversions: Number(row['conversions'] || 0),
-        conversion_value: Number(row['conversion_value'] || 0),
+        conv: Number(row['conv'] || 0),
+        value: Number(row['value'] || 0),
         cpc: Number(row['cpc'] || 0),
         ctr: Number(row['ctr'] || 0),
-        conv_rate: Number(row['conv_rate'] || 0),
+        convRate: Number(row['convRate'] || 0),
         cpa: Number(row['cpa'] || 0),
         roas: Number(row['roas'] || 0),
         aov: Number(row['aov'] || 0)
+      }))
+    } else if (tab === 'adGroups') {
+      // Map the ad groups data
+      return rawData.map((row: any) => ({
+        campaign: String(row['campaign'] || ''),
+        campaignId: String(row['campaignId'] || ''),
+        adGroup: String(row['adGroup'] || ''),
+        adGroupId: String(row['adGroupId'] || ''),
+        clicks: Number(row['clicks'] || 0),
+        value: Number(row['value'] || 0),
+        conv: Number(row['conv'] || 0),
+        cost: Number(row['cost'] || 0),
+        impr: Number(row['impr'] || 0),
+        date: String(row['date'] || '')
       }))
     }
 
@@ -66,11 +80,13 @@ export async function fetchAllTabsData(sheetUrl: string = DEFAULT_SHEET_URL): Pr
   return results.reduce((acc, { tab, data }) => {
     if (tab === 'searchTerms') {
       acc[tab] = data as SearchTermMetric[]
+    } else if (tab === 'adGroups') {
+      acc[tab] = data as AdGroupMetric[];
     } else {
       acc[tab] = data as AdMetric[]
     }
     return acc
-  }, { daily: [], searchTerms: [] } as TabData)
+  }, { daily: [], searchTerms: [], adGroups: [] } as TabData)
 }
 
 export function getCampaigns(data: AdMetric[]): Campaign[] {

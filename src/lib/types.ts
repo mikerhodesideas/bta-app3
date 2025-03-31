@@ -31,17 +31,17 @@ export interface AdMetric {
 
 // Search term metrics
 export interface SearchTermMetric {
-  search_term: string
+  searchTerm: string
   campaign: string
-  ad_group: string
-  impressions: number
+  adGroup: string
+  impr: number
   clicks: number
   cost: number
-  conversions: number
-  conversion_value: number
+  conv: number
+  value: number
   cpc: number
   ctr: number
-  conv_rate: number
+  convRate: number
   cpa: number
   roas: number
   aov: number
@@ -60,7 +60,7 @@ export interface DailyMetrics extends AdMetric {
 export type MetricKey = keyof Omit<AdMetric, 'campaign' | 'campaignId' | 'date'>
 
 // Search term metrics excluding metadata
-export type SearchTermMetricKey = keyof Omit<SearchTermMetric, 'search_term' | 'campaign' | 'ad_group'>
+export type SearchTermMetricKey = keyof Omit<SearchTermMetric, 'searchTerm' | 'campaign' | 'adGroup'>
 
 // All possible metrics (regular + calculated)
 export type AllMetricKeys = MetricKey | keyof Omit<DailyMetrics, keyof AdMetric> | SearchTermMetricKey
@@ -82,9 +82,23 @@ export interface TabConfigs {
   [key: string]: TabConfig
 }
 
+// Add the new AdGroupMetric interface
+export interface AdGroupMetric {
+  campaign: string;
+  campaignId: string;
+  adGroup: string;
+  adGroupId: string;
+  impr: number;
+  clicks: number;
+  value: number;
+  conv: number;
+  cost: number;
+  date: string;
+}
+
 // Type guard for search term data
 export function isSearchTermMetric(data: any): data is SearchTermMetric {
-  return 'search_term' in data && 'ad_group' in data
+  return 'searchTerm' in data && 'adGroup' in data
 }
 
 // Type guard for daily metrics
@@ -92,10 +106,16 @@ export function isAdMetric(data: any): data is AdMetric {
   return 'campaignId' in data && 'impr' in data
 }
 
+// Add a type guard for AdGroupMetric
+export function isAdGroupMetric(data: any): data is AdGroupMetric {
+  return 'adGroup' in data && 'adGroupId' in data;
+}
+
 // Combined tab data type
 export type TabData = {
   daily: AdMetric[]
   searchTerms: SearchTermMetric[]
+  adGroups: AdGroupMetric[]
 }
 
 // Helper type to get numeric values from metrics

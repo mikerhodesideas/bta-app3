@@ -19,17 +19,17 @@ This tab contains search term performance data:
 
 | Header | Type | Description |
 |--------|------|-------------|
-| search_term | string | The actual search query used |
+| searchTerm | string | The actual search query used |
 | campaign | string | Campaign name |
-| ad_group | string | Ad group name |
-| impressions | number | Number of ad impressions |
+| adGroup | string | Ad group name |
+| impr | number | Number of ad impressions |
 | clicks | number | Number of clicks received |
 | cost | number | Cost in account currency (already converted from micros) |
-| conversions | number | Number of conversions |
-| conversion_value | number | Total conversion value |
+| conv | number | Number of conversions |
+| value | number | Total conversion value |
 | cpc | number | Cost per click (calculated) |
 | ctr | number | Click-through rate (decimal, not percentage) |
-| conv_rate | number | Conversion rate (decimal, not percentage) |
+| convRate | number | Conversion rate (decimal, not percentage) |
 | cpa | number | Cost per acquisition |
 | roas | number | Return on ad spend (value/cost) |
 | aov | number | Average order value (value/conversions) |

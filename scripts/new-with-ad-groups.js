@@ -1,7 +1,7 @@
-const SHEET_URL = '';                     // add your sheet url here
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1ocvZvhcMxMmHLLccWOxSjp-EEbkxR5oDyQYwtlsM6Wc/edit?gid=0#gid=0';                     // add your sheet url here
 const SEARCH_TERMS_TAB = 'SearchTerms';
 const DAILY_TAB = 'Daily';
-
+const AD_GROUP_TAB = 'AdGroups';  // New tab for ad group data
 
 // GAQL query for search terms
 const SEARCH_TERMS_QUERY = `
@@ -37,6 +37,24 @@ WHERE segments.date DURING LAST_30_DAYS
 ORDER BY segments.date DESC, metrics.cost_micros DESC
 `;
 
+// GAQL query for ad group data
+const AD_GROUP_QUERY = `
+SELECT
+  campaign.name,
+  campaign.id,
+  ad_group.name,
+  ad_group.id,
+  metrics.clicks,
+  metrics.conversions_value,
+  metrics.conversions,
+  metrics.cost_micros,
+  metrics.impressions,
+  segments.date
+FROM ad_group
+WHERE segments.date DURING LAST_30_DAYS
+ORDER BY segments.date DESC, metrics.cost_micros DESC
+`;
+
 function main() {
   try {
     // Access the Google Sheet
@@ -65,6 +83,15 @@ function main() {
       ["campaign", "campaignId", "impr", "clicks", "value", "conv", "cost", "date"],
       DAILY_QUERY,
       processDailyData
+    );
+    
+    // Process AdGroups tab (new)
+    processTab(
+      ss,
+      AD_GROUP_TAB,
+      ["campaign", "campaignId", "adGroup", "adGroupId", "impr", "clicks", "value", "conv", "cost", "date", "cpc", "ctr", "convRate", "cpa", "roas"],
+      AD_GROUP_QUERY,
+      processAdGroupData
     );
 
   } catch (e) {
@@ -153,6 +180,56 @@ function processDailyData(rows) {
 
     // Create a new row with the data
     const newRow = [campaign, campaignId, impr, clicks, value, conv, cost, date];
+
+    // Push new row to the data array
+    data.push(newRow);
+  }
+  return data;
+}
+
+function processAdGroupData(rows) {
+  const data = [];
+  while (rows.hasNext()) {
+    const row = rows.next();
+
+    // Extract data
+    const campaign = String(row['campaign.name'] || '');
+    const campaignId = String(row['campaign.id'] || '');
+    const adGroup = String(row['ad_group.name'] || '');
+    const adGroupId = String(row['ad_group.id'] || '');
+    const impressions = Number(row['metrics.impressions'] || 0);
+    const clicks = Number(row['metrics.clicks'] || 0);
+    const costMicros = Number(row['metrics.cost_micros'] || 0);
+    const conversions = Number(row['metrics.conversions'] || 0);
+    const conversionValue = Number(row['metrics.conversions_value'] || 0);
+    const date = String(row['segments.date'] || '');
+
+    // Calculate metrics
+    const cost = costMicros / 1000000;  // Convert micros to actual currency
+    const cpc = clicks > 0 ? cost / clicks : 0;
+    const ctr = impressions > 0 ? clicks / impressions : 0;
+    const convRate = clicks > 0 ? conversions / clicks : 0;
+    const cpa = conversions > 0 ? cost / conversions : 0;
+    const roas = cost > 0 ? conversionValue / cost : 0;
+
+    // Create a new row with the data
+    const newRow = [
+      campaign, 
+      campaignId, 
+      adGroup, 
+      adGroupId, 
+      impressions, 
+      clicks, 
+      conversionValue, 
+      conversions, 
+      cost, 
+      date, 
+      cpc, 
+      ctr, 
+      convRate, 
+      cpa, 
+      roas
+    ];
 
     // Push new row to the data array
     data.push(newRow);
