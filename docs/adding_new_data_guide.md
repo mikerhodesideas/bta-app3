@@ -1,6 +1,8 @@
-# Adding New Data to BTA App: Developer Guide
+# Adding New Data to BTA App: 
+# Walkthrough Guide
 
-This guide will walk you through the complete process of adding new data to the BTA App. We'll cover creating a Google Ads script, modifying the existing data pipeline, adding the new data type to the application, and building a new page to display the data.
+This guide will walk you through the complete process of adding new data to the BTA App. 
+We'll cover creating a Google Ads script, modifying the existing data pipeline, adding the new data type to the application, and building a new page to display the data.
 
 ## Table of Contents
 
@@ -643,7 +645,8 @@ Before writing any code, have a conversation with an LLM to clarify what you wan
 **Example prompt to start the conversation:**
 
 ```
-I'm building a Google Ads analytics dashboard with Next.js. I've just added ad group data to my app with these fields:
+I'm building a Google Ads analytics dashboard with Next.js. 
+I've just added ad group data to my app with these fields:
 - campaign
 - campaignId
 - adGroup
@@ -660,7 +663,11 @@ I'm building a Google Ads analytics dashboard with Next.js. I've just added ad g
 - cpa
 - roas
 
-I want to create a new page that helps users understand their ad group performance. What visualizations or insights would be most valuable? How should I structure this page?Please do not write any code yet. Let's first clarify exactly what you're going to build.
+I want to create a new page that helps users understand their ad group performance. 
+What visualizations or insights would be most valuable? 
+How should I structure this page?
+Please do not write any code yet. 
+Let's first clarify exactly what you're going to build.
 ```
 
 ### Step 2: Refine Your Feature Design
