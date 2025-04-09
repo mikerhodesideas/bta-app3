@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
 import { useSettings } from '@/lib/contexts/SettingsContext';
+import { MAX_RECOMMENDED_INSIGHT_ROWS } from '@/lib/config';
 
 // Helper to format metric values based on name and potential type, enforcing specific decimal rules
 const formatMetricValue = (name: string, value: string | number | Date | undefined, currency: string): string => {
@@ -32,6 +33,16 @@ const formatMetricValue = (name: string, value: string | number | Date | undefin
     }
 
     const lowerName = name.toLowerCase();
+
+    // Treat CampaignId specifically as a string
+    if (lowerName === 'campaignid') {
+        return String(value); // Return as string immediately
+    }
+    // Treat AdGroupId specifically as a string
+    if (lowerName === 'adgroupid') {
+        return String(value); // Return as string immediately
+    }
+
     let numericValue: number | undefined = undefined;
 
     // Attempt to convert to number if it's not already
@@ -133,6 +144,7 @@ export const DataInsights: React.FC = () => {
         getFilterOperatorsForType,
         previewRowCount,
         setPreviewRowCount,
+        isTimeSeries,
     } = useDataInsights();
 
     // Local state
@@ -161,17 +173,14 @@ export const DataInsights: React.FC = () => {
         handleOutlierDecisionAndGenerateApiInsights(prompt);
     };
 
-    const outlierDisplayColumns = useMemo(() => {
-        return columns.filter(c => c.type === 'dimension' || c.type === 'metric' || c.field.toLowerCase().includes('date')).slice(0, 8);
-    }, [columns]);
-
     return (
         <TooltipProvider>
             <div className="flex flex-col h-full w-full p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
-                {/* Page Header */}
-                <div className="flex items-center justify-between">
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Data Insights Generator</h1>
-                </div>
+                {/* Remove this main title */}
+                {/* <h1 className="text-3xl font-bold text-gray-900">Data Insights</h1> */}
+
+                {/* This will now be the main title */}
+                <h2 className="text-2xl font-semibold text-gray-800">Data Insights Generator</h2>
 
                 {/* Step 1 & 2: Setup Area */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -249,7 +258,7 @@ export const DataInsights: React.FC = () => {
                                                     <Button variant="ghost" size="sm" onClick={() => setActiveFilterId(null)}>Cancel</Button>
                                                     <div className="flex space-x-2">
                                                         <Button variant="destructive" size="sm" onClick={() => { removeFilter(filter.id); setActiveFilterId(null); }}>Remove</Button>
-                                                        <Button size="sm" onClick={() => setActiveFilterId(null)} disabled={!columnsAvailable}>Apply Filter</Button>
+                                                        <Button variant="default" size="sm" onClick={() => setActiveFilterId(null)} disabled={!columnsAvailable}>Apply Filter</Button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -303,6 +312,15 @@ export const DataInsights: React.FC = () => {
                     </Alert>
                 )}
 
+                {/* Time Series Notification */}
+                {isTimeSeries && selectedSource && !loading && columnsAvailable && (
+                    <Alert variant="default" className="bg-blue-50 border-blue-200 text-blue-800">
+                        <Info className="h-4 w-4" />
+                        <AlertTitle>Time Series Data Detected</AlertTitle>
+                        <AlertDescription>A 'date' column was found. Outlier detection/exclusion has been automatically disabled for time series analysis.</AlertDescription>
+                    </Alert>
+                )}
+
                 {/* Step 3: Data Preview Table */}
                 {selectedSource && !loading && !apiError && columnsAvailable && (
                     <div className="space-y-3">
@@ -320,7 +338,7 @@ export const DataInsights: React.FC = () => {
                             </div>
                         </div>
                         <div className="overflow-x-auto border rounded-lg shadow-sm max-h-[400px] bg-white">
-                            <Table className="min-w-full">
+                            <Table className="min-w-full divide-y divide-gray-200">
                                 <TableHeader className="sticky top-0 bg-gray-100 z-10 shadow-sm">
                                     <TableRow>
                                         {columns.map(column => (
@@ -343,7 +361,11 @@ export const DataInsights: React.FC = () => {
                                             {columns.map(column => {
                                                 const value = column.field === 'isOutlier' ? undefined : row[column.field];
                                                 return (
-                                                    <TableCell key={`${rowIndex}-${column.field}`} className="whitespace-nowrap px-3 py-2 text-gray-800">
+                                                    <TableCell
+                                                        key={`${rowIndex}-${column.field}`}
+                                                        className="whitespace-nowrap px-3 py-2 text-gray-800 truncate max-w-xs"
+                                                        title={String(value ?? '')}
+                                                    >
                                                         {formatMetricValue(column.name, value, settings.currency)}
                                                     </TableCell>
                                                 );
@@ -364,8 +386,8 @@ export const DataInsights: React.FC = () => {
                     </div>
                 )}
 
-                {/* Step 4: Review Summary & Outliers (Appears when data is loaded) */}
-                {selectedSource && !loading && columnsAvailable && (
+                {/* Step 4: Review Summary & Outliers (Appears when data is loaded AND NOT time series) */}
+                {selectedSource && !loading && columnsAvailable && !isTimeSeries && (
                     <div className="space-y-4 p-6 border rounded-lg shadow-sm bg-white">
                         <div className="flex items-center justify-between">
                             <h2 className="text-xl font-semibold text-gray-800"><Activity className="inline h-5 w-5 mr-2 text-teal-600" />4. Review Summary & Outliers</h2>
@@ -444,46 +466,52 @@ export const DataInsights: React.FC = () => {
                                                 </DialogDescription>
                                             </DialogHeader>
                                             <div className="max-h-[60vh] overflow-auto border rounded-md my-4">
-                                                <Table className="text-xs bg-white">
-                                                    <TableHeader className="sticky top-0 bg-gray-100">
-                                                        <TableRow>
-                                                            {outlierDisplayColumns.slice(0, 2).map(col => (
-                                                                <TableHead key={col.field} className="px-2 py-1.5 font-medium text-gray-600">{col.name}</TableHead>
-                                                            ))}
-                                                            <TableHead className="px-2 py-1.5 font-medium text-gray-600">Outlier Metric</TableHead>
-                                                            <TableHead className="px-2 py-1.5 font-medium text-gray-600">Value</TableHead>
-                                                            <TableHead className="px-2 py-1.5 font-medium text-gray-600">Reason</TableHead>
-                                                        </TableRow>
-                                                    </TableHeader>
-                                                    <TableBody>
-                                                        {outliers.map((o, index) => (
-                                                            <TableRow key={o.id || index} className="hover:bg-gray-50">
-                                                                {outlierDisplayColumns.slice(0, 2).map(col => {
-                                                                    const value = col.field === 'isOutlier' ? undefined : o.rowData[col.field];
-                                                                    return (
-                                                                        <TableCell
-                                                                            key={`${o.id}-${col.field}`}
-                                                                            className="px-2 py-1.5 whitespace-nowrap text-gray-700"
-                                                                        >
-                                                                            {formatMetricValue(col.name, value, settings.currency)}
+                                                {(() => { // IIFE to calculate filtered columns once
+                                                    const calculatedMetrics = ['cpc', 'ctr', 'convrate', 'cpa', 'roas'];
+                                                    const columnsToShow = columns.filter(col =>
+                                                        !calculatedMetrics.includes(col.field.toLowerCase())
+                                                    );
+
+                                                    return (
+                                                        <Table className="text-xs bg-white">
+                                                            <TableHeader className="sticky top-0 bg-gray-100">
+                                                                <TableRow>
+                                                                    {/* Map over pre-filtered columns */}
+                                                                    {columnsToShow.map(col => (
+                                                                        <TableHead key={col.field} className="px-2 py-1.5 font-medium text-gray-600 whitespace-nowrap">{col.name}</TableHead>
+                                                                    ))}
+                                                                    {/* Reason column (Outlier Metric/Value columns removed) */}
+                                                                    <TableHead className="px-2 py-1.5 font-medium text-gray-600 whitespace-nowrap">Reason</TableHead>
+                                                                </TableRow>
+                                                            </TableHeader>
+                                                            <TableBody>
+                                                                {outliers.map((o, index) => (
+                                                                    <TableRow key={o.id || index} className="hover:bg-gray-50">
+                                                                        {/* Map over pre-filtered columns for cells */}
+                                                                        {columnsToShow.map(col => {
+                                                                            const value = col.field === 'isOutlier' ? undefined : o.rowData[col.field];
+                                                                            return (
+                                                                                <TableCell
+                                                                                    key={`${o.id}-${col.field}`}
+                                                                                    className="px-2 py-1.5 whitespace-nowrap text-gray-700"
+                                                                                >
+                                                                                    {formatMetricValue(col.name, value, settings.currency)}
+                                                                                </TableCell>
+                                                                            );
+                                                                        })}
+                                                                        {/* Enhanced Reason cell */}
+                                                                        <TableCell className="px-2 py-1.5 text-xs text-gray-600 whitespace-nowrap">
+                                                                            <span className="font-medium text-orange-700">{o.column}:</span> {' '}
+                                                                            {o.reason || (o.mean !== undefined ?
+                                                                                `Value is ${o.value > o.mean ? 'significantly higher' : 'significantly lower'} than average (${o.mean})`
+                                                                                : 'Outlier detected')}
                                                                         </TableCell>
-                                                                    );
-                                                                })}
-                                                                <TableCell className="px-2 py-1.5 whitespace-nowrap font-medium text-orange-700">
-                                                                    {o.column}
-                                                                </TableCell>
-                                                                <TableCell className="px-2 py-1.5 whitespace-nowrap font-medium text-orange-900">
-                                                                    {formatMetricValue(o.column, o.value, settings.currency)}
-                                                                </TableCell>
-                                                                <TableCell className="px-2 py-1.5 text-xs text-gray-600">
-                                                                    {o.reason || (o.mean !== undefined ?
-                                                                        `Value is ${o.value > o.mean ? 'significantly higher' : 'significantly lower'} than average (${formatMetricValue(o.column, o.mean, settings.currency)})`
-                                                                        : 'Outlier detected')}
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        ))}
-                                                    </TableBody>
-                                                </Table>
+                                                                    </TableRow>
+                                                                ))}
+                                                            </TableBody>
+                                                        </Table>
+                                                    );
+                                                })()}
                                             </div>
                                             <DialogFooter>
                                                 <div className="flex items-center space-x-2 mr-auto">
@@ -512,22 +540,29 @@ export const DataInsights: React.FC = () => {
                                                 <h4 className="font-medium mb-2 text-gray-700 border-b pb-1">Metrics Summary</h4>
                                                 {localInsightsSummary.metrics.length > 0 ? (
                                                     <dl className="space-y-3 mt-2">
-                                                        {localInsightsSummary.metrics.map(m => (
-                                                            <React.Fragment key={m.name}>
-                                                                <div className="pb-1.5 border-b border-gray-100 last:border-b-0">
-                                                                    <div className="flex justify-between items-baseline mb-0.5">
-                                                                        <dt className="font-medium text-gray-700 truncate" title={m.name}>{m.name}</dt>
-                                                                        <dd className="font-semibold text-gray-900 pl-2">{formatMetricValue(m.name, m.avg, settings.currency)} <span className="text-xs font-normal text-gray-500">(Avg)</span></dd>
+                                                        {localInsightsSummary.metrics.map(m => {
+                                                            // Define calculated metrics to exclude sum for
+                                                            const calculatedMetrics = ['cpc', 'ctr', 'convrate', 'cpa', 'roas'];
+                                                            const isCalculatedMetric = calculatedMetrics.includes(m.name.toLowerCase());
+
+                                                            return (
+                                                                <React.Fragment key={m.name}>
+                                                                    <div className="pb-1.5 border-b border-gray-100 last:border-b-0">
+                                                                        <div className="flex justify-between items-baseline mb-0.5">
+                                                                            <dt className="font-medium text-gray-700 truncate" title={m.name}>{m.name}</dt>
+                                                                            <dd className="font-semibold text-gray-900 pl-2">{formatMetricValue(m.name, m.avg, settings.currency)} <span className="text-xs font-normal text-gray-500">(Avg)</span></dd>
+                                                                        </div>
+                                                                        <RangeIndicator min={m.min} avg={m.avg} max={m.max} />
+                                                                        <div className="flex justify-between text-xs text-gray-500 mt-0.5">
+                                                                            <span>Min: {formatMetricValue(m.name, m.min, settings.currency)}</span>
+                                                                            {/* Only show Sum if it exists AND is NOT a calculated metric */}
+                                                                            {!isCalculatedMetric && m.sum !== undefined && <span>Sum: {formatMetricValue(m.name, m.sum, settings.currency)}</span>}
+                                                                            <span>Max: {formatMetricValue(m.name, m.max, settings.currency)}</span>
+                                                                        </div>
                                                                     </div>
-                                                                    <RangeIndicator min={m.min} avg={m.avg} max={m.max} />
-                                                                    <div className="flex justify-between text-xs text-gray-500 mt-0.5">
-                                                                        <span>Min: {formatMetricValue(m.name, m.min, settings.currency)}</span>
-                                                                        {m.sum !== undefined && <span>Sum: {formatMetricValue(m.name, m.sum, settings.currency)}</span>}
-                                                                        <span>Max: {formatMetricValue(m.name, m.max, settings.currency)}</span>
-                                                                    </div>
-                                                                </div>
-                                                            </React.Fragment>
-                                                        ))}
+                                                                </React.Fragment>
+                                                            );
+                                                        })}
                                                     </dl>
                                                 ) : <p className="italic text-gray-500 mt-2">No numeric metrics found.</p>}
                                             </div>
@@ -609,11 +644,20 @@ export const DataInsights: React.FC = () => {
                                         className="w-full shadow-sm border-gray-300 focus:ring-indigo-500 focus:border-indigo-500"
                                         disabled={loadingInsights}
                                     />
-                                    {outliers && outliers.length > 0 && (
-                                        <p className="text-xs text-orange-600 mt-1 italic">
-                                            Note: Outliers will be {excludeOutliers ? 'EXCLUDED' : 'INCLUDED'} in the data sent for AI analysis based on the switch above.
-                                        </p>
-                                    )}
+                                    {(() => { // IIFE to calculate rowsToSend and render the note
+                                        let rowsToSend = filteredRows;
+                                        if (!isTimeSeries && excludeOutliers && outliers && outliers.length > 0) {
+                                            rowsToSend = Math.max(0, filteredRows - outliers.length);
+                                        }
+                                        return (
+                                            <p className="text-xs text-orange-600 mt-1 italic">
+                                                {!isTimeSeries && outliers && outliers.length > 0 && (
+                                                    <>Note: Outliers will be {excludeOutliers ? 'EXCLUDED' : 'INCLUDED'} in the data sent for AI analysis based on the switch above.<br /></>
+                                                )}
+                                                Sending {rowsToSend} rows for analysis (Recommended max: {MAX_RECOMMENDED_INSIGHT_ROWS}).
+                                            </p>
+                                        );
+                                    })()}
                                 </div>
                                 <Button
                                     onClick={handleGenerateApiInsightsClick}

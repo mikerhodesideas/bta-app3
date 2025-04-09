@@ -172,6 +172,7 @@ export function useDataInsights() {
     const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [apiError, setApiError] = useState<string | null>(null);
     const [rowCountWarning, setRowCountWarning] = useState<string | null>(null);
+    const [isTimeSeries, setIsTimeSeries] = useState(false);
 
     const resetState = useCallback((resetFiltersAndColumns = true) => {
         if (resetFiltersAndColumns) {
@@ -182,8 +183,22 @@ export function useDataInsights() {
         setDetectedOutliers(null);
         setExcludeOutliers(true);
         setApiError(null);
-        // Don't reset rowCountWarning here as it should persist
+        // Reset rowCountWarning here as it should persist
+        // Reset time series flag on source change
+        setIsTimeSeries(false);
     }, []);
+
+    // Effect to set default source AFTER initial data load
+    useEffect(() => {
+        // Check if loading is finished and no source is selected yet
+        if (!globalLoading && !selectedSource) {
+            const defaultSource = dataSources.find(src => src.id === 'SearchTerms');
+            if (defaultSource) {
+                setSelectedSource(defaultSource);
+                console.log("[Insights] Initial data loaded, setting default source to SearchTerms.");
+            }
+        }
+    }, [globalLoading, selectedSource, dataSources]); // Dependencies
 
     // --- Derived State from Store ---
     const rawDataForSelectedTab = useMemo(() => {
@@ -222,6 +237,15 @@ export function useDataInsights() {
             setSortConfig({ key: '', direction: 'desc' });
         }
     }, [derivedColumns, sortConfig.key]); // Depend only on derivedColumns
+
+    // Detect if the dataset is likely time series
+    useEffect(() => {
+        const dateColumnExists = columns.some(col => col.type === 'date');
+        setIsTimeSeries(dateColumnExists);
+        if (dateColumnExists) {
+            console.log("[Insights] Detected 'date' column, treating as time series data. Outlier detection will be skipped.");
+        }
+    }, [columns]);
 
     // Convert raw data to DataRowType using the derived columns
     const baseData = useMemo(() => {
@@ -353,26 +377,31 @@ export function useDataInsights() {
 
     // --- Outlier Detection (runs on filtered data, marks rows with isOutlier flag) ---
     useEffect(() => {
-        if (!columns.length || !baseData.length || isGeneratingLocalInsights) {
+        // Skip outlier detection if it's time series data or not enough data/columns
+        if (isTimeSeries || !columns.length || !baseData.length || isGeneratingLocalInsights || baseData.length < 4) {
             setDetectedOutliers(null);
+            // Ensure all isOutlier flags are reset if skipping
+            baseData.forEach(row => { row.isOutlier = false; });
             return;
         }
+
+        // Define core metrics inside the effect
+        const CORE_OUTLIER_METRICS = ['impr', 'clicks', 'cost', 'conv', 'value'];
 
         // Reset all isOutlier flags
         baseData.forEach(row => {
             row.isOutlier = false;
         });
 
-        // Filter out derived metrics that we don't want to check for outliers
-        const excludedMetrics = ['convrate', 'cpa', 'roas', 'ctr'];
-        const metricColumns = columns.filter(col =>
+        // Filter to only check core metrics for outliers
+        const metricColumnsToCheck = columns.filter(col =>
             col.type === 'metric' &&
-            !excludedMetrics.some(excluded => col.field.toLowerCase().includes(excluded))
+            CORE_OUTLIER_METRICS.includes(col.field.toLowerCase())
         );
 
         const outliersFound: EnhancedOutlierType[] = [];
 
-        metricColumns.forEach(metricCol => {
+        metricColumnsToCheck.forEach(metricCol => {
             const values = baseData.map(row => row[metricCol.field]).filter(v => typeof v === 'number' && !isNaN(v)) as number[];
             if (values.length < 4) return;
 
@@ -392,8 +421,8 @@ export function useDataInsights() {
                     row.isOutlier = true;
 
                     const reason = value < lowerBound
-                        ? `Value is significantly lower than average (${value.toFixed(2)} < ${mean.toFixed(2)} - 3σ)`
-                        : `Value is significantly higher than average (${value.toFixed(2)} > ${mean.toFixed(2)} + 3σ)`;
+                        ? `Value is significantly lower than average (${mean.toFixed(2)})`
+                        : `Value is significantly higher than average (${mean.toFixed(2)})`;
 
                     outliersFound.push({
                         id: `${metricCol.field}-${rowIndex}`,
@@ -423,7 +452,7 @@ export function useDataInsights() {
 
         setDetectedOutliers(uniqueOutliers.length > 0 ? uniqueOutliers : null);
 
-    }, [baseData, columns, isGeneratingLocalInsights]); // Remove excludeOutliers from dependencies
+    }, [baseData, columns, isGeneratingLocalInsights, isTimeSeries]); // Removed CORE_OUTLIER_METRICS dependency
 
     // --- Data for Summary Calculation (depends on outlier state) ---
     const dataForSummary = useMemo(() => {
@@ -518,7 +547,11 @@ export function useDataInsights() {
         setInsights(null);
 
         let dataForApi = filteredAndSortedData;
-        let outlierInfoForPrompt = "Outliers were included.";
+        let outlierInfoForPrompt = isTimeSeries
+            ? "Time series data detected; outliers were not checked or excluded."
+            : (excludeOutliers && detectedOutliers && detectedOutliers.length > 0
+                ? `${detectedOutliers.length} potential outliers were excluded based on standard deviation analysis.`
+                : "Outliers were included.");
 
         if (excludeOutliers && detectedOutliers && detectedOutliers.length > 0) {
             const outlierRowIndices = new Set(detectedOutliers.map(o => o.rowIndex));
@@ -569,9 +602,18 @@ export function useDataInsights() {
                 // safetySettings removed based on user's diff
             };
 
-            console.log('[Insights] Sending request:', JSON.stringify(requestBody, null, 2));
+            // Create a copy for logging with truncated data
+            const requestBodyForLog = JSON.parse(JSON.stringify(requestBody));
+            // Check if the data part exists and truncate it for the log
+            if (requestBodyForLog.contents?.[0]?.parts?.[1]?.text) {
+                const originalLength = requestBodyForLog.contents[0].parts[1].text.length;
+                requestBodyForLog.contents[0].parts[1].text =
+                    requestBodyForLog.contents[0].parts[1].text.substring(0, 100) +
+                    `... (truncated ${originalLength - 100} chars for log)`;
+            }
+            console.log('[Insights] Sending request (data truncated in log):', JSON.stringify(requestBodyForLog, null, 2));
 
-            // Perform the API fetch
+            // Perform the API fetch with the original, full requestBody
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: {
@@ -634,16 +676,16 @@ export function useDataInsights() {
             // Ensure loading state is always turned off
             setLoadingInsights(false);
         }
-    }, [filteredAndSortedData, detectedOutliers, selectedSource, filters, excludeOutliers, apiError]); // Dependencies for useCallback
+    }, [filteredAndSortedData, detectedOutliers, selectedSource, filters, excludeOutliers, isTimeSeries]); // Add isTimeSeries
 
     // Filter/Sort management functions (remain the same)
     const addFilter = useCallback(() => {
         if (!columns || columns.length === 0) return;
         const defaultField = columns[0].field;
         const defaultType = columns[0].type;
-        const defaultOperators = getFilterOperatorsForType(defaultType);
-        const defaultOperator = defaultType === 'metric' ? 'greater_than' :
-            (defaultOperators.length > 0 ? defaultOperators[0].value : 'contains');
+        // Set default operator based on type: '>' for metric, 'contains' otherwise
+        const defaultOperator = defaultType === 'metric' ? 'greater_than' : 'contains';
+
         setFilters(prev => [
             ...prev,
             { id: Date.now(), field: defaultField, operator: defaultOperator, value: '' }
@@ -672,7 +714,7 @@ export function useDataInsights() {
     const handleSort = useCallback((key: string) => {
         setSortConfig(prev => ({
             key,
-            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+            direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
         }));
     }, []);
     const getFilterOperatorsForType = (type: 'metric' | 'dimension' | 'date'): { label: string; value: FilterOperatorType }[] => {
@@ -691,11 +733,11 @@ export function useDataInsights() {
             { label: 'Does Not Contain (Case Sensitive)', value: 'does_not_contain_case_sensitive' as FilterOperatorType },
         ];
         const numeric = [
+            { label: 'Greater Than', value: 'greater_than' as FilterOperatorType },
+            { label: 'Less Than', value: 'less_than' as FilterOperatorType },
             { label: 'Equals', value: 'equals_number' as FilterOperatorType },
             { label: 'Not Equals', value: 'not_equals' as FilterOperatorType },
-            { label: 'Greater Than', value: 'greater_than' as FilterOperatorType },
             { label: 'Greater Than or Equals', value: 'greater_than_equals' as FilterOperatorType },
-            { label: 'Less Than', value: 'less_than' as FilterOperatorType },
             { label: 'Less Than or Equals', value: 'less_than_equals' as FilterOperatorType },
         ];
         const date = [
@@ -741,5 +783,6 @@ export function useDataInsights() {
         getFilterOperatorsForType,
         previewRowCount,
         setPreviewRowCount,
+        isTimeSeries // Expose the time series flag
     };
 }

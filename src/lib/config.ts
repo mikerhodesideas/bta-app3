@@ -11,7 +11,7 @@ export const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwZIy8
 export const SHEET_TABS = ['Daily', 'AdGroups', 'SearchTerms'] as const
 export type SheetTab = typeof SHEET_TABS[number]
 
-export const MAX_RECOMMENDED_INSIGHT_ROWS = 50;
+export const MAX_RECOMMENDED_INSIGHT_ROWS = 500;
 
 // Gemini Configuration
 export const GEMINI_MODEL = 'gemini-2.0-flash'; // -2.5-pro-preview-03-25';
