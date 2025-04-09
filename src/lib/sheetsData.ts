@@ -3,29 +3,33 @@ import { AdMetric, Campaign, SearchTermMetric, TabData, AdGroupMetric, isSearchT
 import { SHEET_TABS, SheetTab, DEFAULT_SHEET_URL } from './config'
 
 async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[] | SearchTermMetric[] | AdGroupMetric[]> {
+  // console.log(`[sheetsData] Starting fetch for tab: ${tab}`); // Removed
   try {
     const urlWithTab = `${sheetUrl}?tab=${tab}`
+    // console.log(`[sheetsData] Fetching URL: ${urlWithTab}`); // Removed
 
     const response = await fetch(urlWithTab)
 
     if (!response.ok) {
-      console.error(`HTTP error ${response.status} fetching tab ${tab}`)
-      return [] // Return empty array instead of throwing
+      console.error(`HTTP error ${response.status} fetching tab ${tab}`) // Kept error log
+      return []
     }
+    // console.log(`[sheetsData] Received successful response for tab: ${tab}`); // Removed
 
     let rawData
     try {
       rawData = await response.json()
+      // console.log(`[sheetsData] Successfully parsed JSON for tab: ${tab}`); // Removed
     } catch (jsonError) {
-      console.error(`Failed to parse JSON for tab ${tab}`)
-      return [] // Return empty array on JSON parse error
+      console.error(`Failed to parse JSON for tab ${tab}:`, jsonError) // Kept error log
+      return []
     }
 
     if (!Array.isArray(rawData)) {
       if (rawData && typeof rawData === 'object' && 'error' in rawData) {
-        console.error(`Error from API for tab ${tab}:`, rawData.error)
+        console.error(`Error from API for tab ${tab}:`, rawData.error) // Kept error log
       } else {
-        console.error(`Response is not an array for tab ${tab}`)
+        console.error(`Response is not an array for tab ${tab}`) // Kept error log
       }
       return []
     }
@@ -80,21 +84,23 @@ async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[]
       date: String(row['date'] || '')
     }))
   } catch (error) {
-    console.error(`Error fetching ${tab} data:`, error)
+    console.error(`Error fetching ${tab} data:`, error) // Kept error log
     return []
   }
 }
 
 export async function fetchAllTabsData(sheetUrl: string = DEFAULT_SHEET_URL): Promise<TabData> {
+  // console.log(`[sheetsData] Starting fetch for all tabs. URL: ${sheetUrl}`); // Removed
   const results = await Promise.all(
     SHEET_TABS.map(async tab => {
+      // console.log(`[sheetsData] Processing tab: ${tab} in Promise.all`); // Removed
       try {
         return {
           tab,
           data: await fetchTabData(sheetUrl, tab)
         }
       } catch (error) {
-        console.error(`Failed to fetch data for tab ${tab}:`, error)
+        console.error(`Failed to fetch data for tab ${tab}:`, error) // Kept error log
         return {
           tab,
           data: []
@@ -103,13 +109,15 @@ export async function fetchAllTabsData(sheetUrl: string = DEFAULT_SHEET_URL): Pr
     })
   )
 
+  // console.log(`[sheetsData] Fetching complete. Assembling final data structure.`); // Removed
   return results.reduce((acc, { tab, data }) => {
+    // console.log(`[sheetsData] Assigning data for tab: ${tab}`); // Removed
     if (tab === 'SearchTerms') {
       acc[tab] = data as SearchTermMetric[]
     } else if (tab === 'AdGroups') {
       acc[tab] = data as AdGroupMetric[];
     } else {
-      acc[tab] = data as AdMetric[]
+      acc[tab] = data as AdMetric[] // Default to AdMetric for 'Daily'
     }
     return acc
   }, { Daily: [], SearchTerms: [], AdGroups: [] } as TabData)

@@ -41,7 +41,7 @@ export default function TermsPage() {
         return <div className="p-8 text-center">Loading...</div>
     }
 
-    const searchTerms = (tabsData?.searchTerms || []) as SearchTermMetric[]
+    const searchTerms = (tabsData?.SearchTerms || []) as SearchTermMetric[]
 
     // Sort data
     const sortedTerms = [...searchTerms].sort((a, b) => {

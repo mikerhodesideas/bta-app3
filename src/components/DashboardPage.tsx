@@ -9,7 +9,7 @@ import { useSettings } from '@/lib/contexts/SettingsContext'
 import { fetchAllTabsData, getCampaigns, getMetricsByDate } from '@/lib/sheetsData'
 import { calculateMetrics, calculateDailyMetrics, calculateProfit, calculateDailyProfit } from '@/lib/metrics'
 import { formatCurrency, formatNumber } from '@/lib/utils'
-import type { MetricKey, AdMetric, AllMetricKeys, DailyMetrics, MetricOptions } from '@/lib/types'
+import type { MetricKey, AdMetric, AllMetricKeys, DailyMetrics, MetricOptions, MetricOption } from '@/lib/types'
 import type { SheetTab } from '@/lib/config'
 import { Button } from '@/components/ui/button'
 
@@ -99,13 +99,22 @@ export function DashboardPage() {
     }
 
     // Combine metric options with calculated metrics
-    const allMetricOptions = {
-        ...metricOptions,
+    // Explicitly type and ensure all keys from AllMetricKeys (including CPC) are potentially covered
+    const allMetricOptions: MetricOptions = {
+        ...metricOptions, // Base metrics like cost, value, clicks, etc.
         CTR: { label: 'CTR', format: (val: number) => val.toFixed(1) + '%' },
         CvR: { label: 'CvR', format: (val: number) => val.toFixed(1) + '%' },
         CPA: { label: 'CPA', format: (val: number) => formatCurrency(val, settings.currency) },
-        ROAS: { label: 'ROAS', format: (val: number) => val.toFixed(2) + 'x' }
-    }
+        ROAS: { label: 'ROAS', format: (val: number) => val.toFixed(2) + 'x' },
+        CPC: { label: 'CPC', format: (val: number) => formatCurrency(val, settings.currency) } // Add missing CPC
+    };
+
+    // Define a default option for safety
+    const defaultOption: MetricOption = { label: 'Unknown', format: (v) => String(v) };
+
+    // Get selected keys
+    const metric1Key = selectedMetrics[0];
+    const metric2Key = selectedMetrics.length > 1 ? selectedMetrics[1] : undefined;
 
     return (
         <div className="container mx-auto px-4 py-12 mt-16">
@@ -166,17 +175,17 @@ export function DashboardPage() {
                         <MetricsChart
                             data={dailyMetrics}
                             metric1={{
-                                key: selectedMetrics[0],
-                                label: metricOptions[selectedMetrics[0]].label,
-                                color: '#1e40af',
-                                format: (v: number) => metricOptions[selectedMetrics[0]].format(v)
+                                key: metric1Key,
+                                label: (allMetricOptions[metric1Key] ?? defaultOption).label, // Use safe access
+                                color: '#00008b', // Ensure Dark Blue
+                                format: (v: number) => (allMetricOptions[metric1Key] ?? defaultOption).format(v) // Use safe access
                             }}
-                            metric2={{
-                                key: selectedMetrics[1],
-                                label: metricOptions[selectedMetrics[1]].label,
-                                color: '#ea580c',
-                                format: (v: number) => metricOptions[selectedMetrics[1]].format(v)
-                            }}
+                            metric2={metric2Key ? {
+                                key: metric2Key,
+                                label: (allMetricOptions[metric2Key] ?? defaultOption).label, // Use safe access
+                                color: '#cc5500', // Ensure Burnt Orange
+                                format: (v: number) => (allMetricOptions[metric2Key] ?? defaultOption).format(v) // Use safe access
+                            } : undefined}
                             chartType={chartType}
                         />
                     </>
@@ -190,12 +199,12 @@ export function DashboardPage() {
                             metric1={{
                                 key: 'profit',
                                 label: isProfitStrategy ? 'Profit' : 'Net Revenue',
-                                color: '#1e40af',
+                                color: '#00008b', // Ensure Dark Blue for profit/revenue chart too
                                 format: (v: number) => formatCurrency(v, settings.currency)
                             }}
                             chartType="bar"
                             barColors={{
-                                profit: (value: number) => value >= 0 ? 'rgb(229 231 235)' : 'rgb(252 165 165)'
+                                profit: (value: number) => value >= 0 ? 'rgb(229 231 235)' : 'rgb(252 165 165)' // Existing logic for profit bar colors
                             }}
                         />
                     </>

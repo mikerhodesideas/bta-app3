@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card'
 export default function DataTestPage() {
     const { settings } = useSettings()
     const [tabData, setTabData] = useState<TabData | null>(null)
-    const [selectedTab, setSelectedTab] = useState<SheetTab>('daily')
+    const [selectedTab, setSelectedTab] = useState<SheetTab>('Daily')
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 

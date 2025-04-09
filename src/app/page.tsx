@@ -74,7 +74,7 @@ export default function DashboardPage() {
 
         fetchAllTabsData(settings.sheetUrl)
             .then((allData: TabData) => {
-                const dailyData = allData.daily || []
+                const dailyData = allData.Daily || []
                 setData(dailyData)
 
                 const campaigns = getCampaigns(dailyData)

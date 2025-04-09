@@ -56,4 +56,10 @@ export interface OutlierType {
     row: DataRowType;
 }
 
-export type DataRowType = Record<string, string | number | Date>; 
+export type BaseDataRowType = {
+    [key: string]: string | number | Date;
+};
+
+export type DataRowType = BaseDataRowType & {
+    isOutlier?: boolean;
+}; 

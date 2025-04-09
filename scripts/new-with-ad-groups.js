@@ -1,4 +1,4 @@
-const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1ocvZvhcMxMmHLLccWOxSjp-EEbkxR5oDyQYwtlsM6Wc/edit?gid=0#gid=0';                     // add your sheet url here
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1kmUOe13stAsXwGQ30AIOPWiP8w-9EmS3iLU6QaDXY0g/';                     // add your sheet url here
 const SEARCH_TERMS_TAB = 'SearchTerms';
 const DAILY_TAB = 'Daily';
 const AD_GROUP_TAB = 'AdGroups';  // New tab for ad group data
