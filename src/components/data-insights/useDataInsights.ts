@@ -583,16 +583,20 @@ export function useDataInsights() {
             // Parse the JSON response
             const responseJson = await response.json();
 
-            // Log details for debugging
+            // --- Re-added logging --- 
+            // Log the raw parsed JSON object immediately after parsing
             console.log('[Insights] Parsed API Response Object:', responseJson);
-            if (responseJson.promptFeedback) {
-                console.warn('[Insights] API Response included promptFeedback:', responseJson.promptFeedback);
-            }
-            console.log('[Insights] Full API Response (Stringified):', {
+            // Log the stringified version for comparison/readability in console
+            console.log('[Insights] Full API Response (Stringified for Log):', {
                 status: response.status,
                 headers: Object.fromEntries(response.headers.entries()),
                 body: JSON.stringify(responseJson, null, 2)
             });
+            // Log prompt feedback separately if it exists, as it might be relevant
+            if (responseJson.promptFeedback) {
+                console.warn('[Insights] API Response included promptFeedback:', responseJson.promptFeedback);
+            }
+            // --- End Re-added logging --- 
 
             // Check if the response status is OK
             if (!response.ok) {
@@ -601,37 +605,24 @@ export function useDataInsights() {
                 throw new Error(errorMessage); // Throw error to be caught by catch block
             }
 
-            // --- Process the response (extract insights or feedback) ---
-            let insightText: string | null = null;
+            // --- Attempt to extract and display the text from the first candidate --- 
             const candidate = responseJson.candidates?.[0];
-            const blockFeedback = responseJson.promptFeedback;
+            const insightText = candidate?.content?.parts?.[0]?.text;
 
-            if (candidate?.content?.parts?.[0]?.text) {
-                // Found standard candidate text
-                insightText = candidate.content.parts[0].text;
-                console.log('[Insights] API insights received successfully via candidates.');
-            } else if (blockFeedback?.blockReason) {
-                // Found block reason in promptFeedback
-                insightText = `API request was blocked. Reason: ${blockFeedback.blockReason}.`;
-                if (blockFeedback.safetyRatings) {
-                    insightText += ` Details: ${JSON.stringify(blockFeedback.safetyRatings)}`;
-                }
-                console.warn('[Insights] API response blocked, displaying block reason.');
-                setApiError(insightText); // Show block reason as an error too
-            }
-
-            // Update state based on extracted text or lack thereof
             if (insightText) {
+                // Successfully extracted text from candidate
                 setInsights(insightText);
-                setApiError(null); // Clear previous API errors
+                setApiError(null); // Clear any previous errors
+                console.log('[Insights] API call successful. Extracted and displaying text from candidates[0].content.parts[0].text');
             } else {
-                // Successful response but no usable content
-                if (!apiError) { // Avoid overwriting existing errors like block reasons
-                    const errorMsg = 'API call successful (200 OK), but no insights content or block reason was found.';
-                    console.error('[Insights]', errorMsg, 'Response:', responseJson);
-                    setApiError(errorMsg);
-                }
-                setInsights(null); // Ensure insights are cleared
+                // Candidate text not found, even though response was OK.
+                // Log the issue and display the raw response as a fallback.
+                const errorMsg = 'API call successful (200 OK), but failed to extract text content from candidates[0].content.parts[0].text.';
+                console.error('[Insights]', errorMsg, 'Full Response:', responseJson);
+                // Display the raw JSON as fallback as previously agreed
+                const rawResponseText = `Error: ${errorMsg}\n\nRaw Response:\n${JSON.stringify(responseJson, null, 2)}`;
+                setInsights(rawResponseText);
+                setApiError(errorMsg); // Set an error state for clarity
             }
 
         } catch (error) {

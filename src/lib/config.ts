@@ -14,7 +14,7 @@ export type SheetTab = typeof SHEET_TABS[number]
 export const MAX_RECOMMENDED_INSIGHT_ROWS = 50;
 
 // Gemini Configuration
-export const GEMINI_MODEL = 'gemini-2.5-pro-preview-03-25';
+export const GEMINI_MODEL = 'gemini-2.0-flash'; // -2.5-pro-preview-03-25';
 
 
 export interface TabConfig {
