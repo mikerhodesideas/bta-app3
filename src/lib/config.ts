@@ -2,55 +2,31 @@
 import type { MetricOptions } from './types'
 
 export const COLORS = {
-    primary: '#1e40af',
-    secondary: '#ea580c'
+    primary: '#3b82f6',   // blue-500
+    secondary: '#10b981' // emerald-500
 } as const
 
 export const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbxlj8_wOmzv_4X4AHoeqWl-SFbl4vEO8QMehv39P0wv8f6IffZeqvTJ53niQHXjyjlAYw/exec'
 
-export const SHEET_TABS = ['daily', 'searchTerms', 'adGroups'] as const
+export const SHEET_TABS = ['Daily', 'AdGroups', 'SearchTerms'] as const
 export type SheetTab = typeof SHEET_TABS[number]
 
+export const MAX_RECOMMENDED_INSIGHT_ROWS = 500;
+
+// Gemini Configuration
+export const GEMINI_MODEL = 'gemini-2.5-pro-preview-03-25';
+// IMPORTANT: Store your Gemini API Key securely.
+// It's recommended to use environment variables (e.g., process.env.GEMINI_API_KEY)
+// and access it server-side, NOT directly in client-side code.
+// Add GEMINI_API_KEY='YOUR_API_KEY_HERE' to your .env.local file
+
 export interface TabConfig {
-    name: SheetTab
-    metrics: MetricOptions
+    // Define structure for tab configurations if needed
 }
 
-export const TAB_CONFIGS: Record<SheetTab, TabConfig> = {
-    daily: {
-        name: 'daily',
-        metrics: {
-            impr: { label: 'Impr', format: (val: number) => val.toLocaleString() },
-            clicks: { label: 'Clicks', format: (val: number) => val.toLocaleString() },
-            cost: { label: 'Cost', format: (val: number) => `$${val.toFixed(2)}` },
-            conv: { label: 'Conv', format: (val: number) => val.toFixed(1) },
-            value: { label: 'Value', format: (val: number) => `$${val.toFixed(2)}` }
-        }
-    },
-    searchTerms: {
-        name: 'searchTerms',
-        metrics: {
-            impressions: { label: 'Impr', format: (val: number) => val.toLocaleString() },
-            clicks: { label: 'Clicks', format: (val: number) => val.toLocaleString() },
-            cost: { label: 'Cost', format: (val: number) => `$${val.toFixed(2)}` },
-            conversions: { label: 'Conv', format: (val: number) => val.toFixed(1) },
-            conversion_value: { label: 'Value', format: (val: number) => `$${val.toFixed(2)}` },
-            cpc: { label: 'CPC', format: (val: number) => `$${val.toFixed(2)}` },
-            ctr: { label: 'CTR', format: (val: number) => `${(val * 100).toFixed(1)}%` },
-            conv_rate: { label: 'CvR', format: (val: number) => `${(val * 100).toFixed(1)}%` },
-            cpa: { label: 'CPA', format: (val: number) => `$${val.toFixed(2)}` },
-            roas: { label: 'ROAS', format: (val: number) => `${val.toFixed(2)}x` },
-            aov: { label: 'AOV', format: (val: number) => `$${val.toFixed(2)}` }
-        }
-    },
-    adGroups: {
-        name: 'adGroups',
-        metrics: {
-            impr: { label: 'Impr', format: (val: number) => val.toLocaleString() },
-            clicks: { label: 'Clicks', format: (val: number) => val.toLocaleString() },
-            cost: { label: 'Cost', format: (val: number) => `$${val.toFixed(2)}` },
-            conv: { label: 'Conv', format: (val: number) => val.toFixed(1) },
-            value: { label: 'Value', format: (val: number) => `$${val.toFixed(2)}` }
-        }
-    }
-} 
+// If you have specific configurations per tab, you can define them like this:
+// export const TABS_CONFIG: Record<SheetTab, TabConfig> = {
+//     Daily: { /* config for Daily */ },
+//     AdGroups: { /* config for AdGroups */ },
+//     SearchTerms: { /* config for SearchTerms */ },
+// };

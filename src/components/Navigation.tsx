@@ -37,6 +37,15 @@ export function Navigation() {
                         >
                             Data Test
                         </Link>
+                        <Link
+                            href="/data-insights"
+                            className={cn(
+                                "text-sm font-medium transition-colors hover:text-foreground/80",
+                                pathname === "/data-insights" ? "text-foreground" : "text-foreground/60"
+                            )}
+                        >
+                            Data Insights
+                        </Link>
                     </div>
                     <Link
                         href="/settings"

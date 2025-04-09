@@ -56,7 +56,7 @@ function main() {
         // Create headers
         const headers = [
             'Campaign', 'Placement', 'Impressions', 'Clicks', 'Cost',
-            'Conversions', 'Conv. Value', 'CTR', 'CvR', 'CPA', 'ROAS', 'AOV'
+            'Conversions', 'Conv. Value', 'CTR', 'CvR', 'CPA', 'ROAS'
         ];
 
         // Write headers and data to sheet in a single operation
@@ -110,12 +110,11 @@ function calculateMetrics(rows) {
             const cvr = clicks > 0 ? conversions / clicks : 0;
             const cpa = conversions > 0 ? cost / conversions : 0;
             const roas = cost > 0 ? conversionValue / cost : 0;
-            const aov = conversions > 0 ? conversionValue / conversions : 0;
 
             // Add all variables and calculated metrics to a new row
             const newRow = [
                 campaignName, placement, impressions, clicks, cost,
-                conversions, conversionValue, ctr, cvr, cpa, roas, aov
+                conversions, conversionValue, ctr, cvr, cpa, roas
             ];
 
             data.push(newRow);

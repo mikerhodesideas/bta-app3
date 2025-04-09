@@ -108,7 +108,7 @@ export function MetricsChart({
     // Helper function to format y-axis ticks
     const formatYAxisTick = (d: number, key: string) => {
       // Check if the metric is cost or value (currency)
-      if (key.includes('cost') || key.includes('value') || key.includes('CPC') || key.includes('CPA') || key.includes('AOV')) {
+      if (key.includes('cost') || key.includes('value') || key.includes('CPC') || key.includes('CPA') || key.includes('ROAS')) {
         return formatCurrencyForAxis(d, '$')
       }
       // Check if the metric is conversions

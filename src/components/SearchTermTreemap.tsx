@@ -15,7 +15,6 @@ interface SearchTermData {
     cvr: number
     cpa: number
     roas: number
-    aov: number
     children?: SearchTermData[]
     [key: string]: number | string | SearchTermData[] | undefined
 }
@@ -92,7 +91,7 @@ export function SearchTermTreemap({ data, sizeMetric, colorMetric }: SearchTermT
 
         const formatMetricValue = (metric: string, value: number) => {
             if (['ctr', 'cvr'].includes(metric)) return `${(value * 100).toFixed(1)}%`
-            if (['cost', 'cpa', 'value', 'aov'].includes(metric)) return formatCurrency(value)
+            if (['cost', 'cpa', 'value'].includes(metric)) return formatCurrency(value)
             if (metric === 'roas') return value.toFixed(2) + 'x'
             return format(value)
         }
@@ -260,7 +259,6 @@ ${colorMetric}: ${formatMetricValue(colorMetric, d.data[colorMetric] as number)}
                 case 'cvr': return [0, 0.1]   // 0-10%
                 case 'cpa': return [200, 0]    // Inverted scale: $200-0 (lower is better)
                 case 'roas': return [0, 5]    // 0-5x
-                case 'aov': return [0, 500]   // $0-500
                 default: return [0, 1]
             }
         }

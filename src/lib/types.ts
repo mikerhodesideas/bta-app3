@@ -44,7 +44,6 @@ export interface SearchTermMetric {
   convRate: number
   cpa: number
   roas: number
-  aov: number
 }
 
 // Calculated metrics for daily data
@@ -94,6 +93,11 @@ export interface AdGroupMetric {
   conv: number;
   cost: number;
   date: string;
+  cpc: number;
+  ctr: number;
+  convRate: number;
+  cpa: number;
+  roas: number;
 }
 
 // Type guard for search term data
@@ -113,9 +117,9 @@ export function isAdGroupMetric(data: any): data is AdGroupMetric {
 
 // Combined tab data type
 export type TabData = {
-  daily: AdMetric[]
-  searchTerms: SearchTermMetric[]
-  adGroups: AdGroupMetric[]
+  Daily: AdMetric[]
+  SearchTerms: SearchTermMetric[]
+  AdGroups: AdGroupMetric[]
 }
 
 // Helper type to get numeric values from metrics

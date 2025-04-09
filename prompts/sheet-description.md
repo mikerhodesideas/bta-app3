@@ -32,7 +32,6 @@ This tab contains search term performance data:
 | convRate | number | Conversion rate (decimal, not percentage) |
 | cpa | number | Cost per acquisition |
 | roas | number | Return on ad spend (value/cost) |
-| aov | number | Average order value (value/conversions) |
 
 ## Tab 2: "Daily"
 This tab contains daily campaign performance data:

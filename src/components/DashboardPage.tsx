@@ -6,17 +6,36 @@ import { CampaignSelect } from '@/components/CampaignSelect'
 import { MetricsScorecard } from '@/components/MetricsScorecard'
 import { MetricsChart } from '@/components/MetricsChart'
 import { useSettings } from '@/lib/contexts/SettingsContext'
-import { fetchAllTabsData, getCampaigns, getMetricsByDate, getMetricOptions } from '@/lib/sheetsData'
+import { fetchAllTabsData, getCampaigns, getMetricsByDate } from '@/lib/sheetsData'
 import { calculateMetrics, calculateDailyMetrics, calculateProfit, calculateDailyProfit } from '@/lib/metrics'
-import { formatCurrency } from '@/lib/utils'
-import type { MetricKey, AdMetric, AllMetricKeys, DailyMetrics } from '@/lib/types'
+import { formatCurrency, formatNumber } from '@/lib/utils'
+import type { MetricKey, AdMetric, AllMetricKeys, DailyMetrics, MetricOptions } from '@/lib/types'
 import type { SheetTab } from '@/lib/config'
 import { Button } from '@/components/ui/button'
 
+// Define base metric options directly here
+const BASE_METRIC_OPTIONS: MetricOptions = {
+    cost: { label: 'Cost', format: (val) => formatCurrency(val, 'USD') }, // Provide default currency
+    value: { label: 'Conv. Value', format: (val) => formatCurrency(val, 'USD') }, // Provide default currency
+    clicks: { label: 'Clicks', format: formatNumber },
+    conv: { label: 'Conversions', format: formatNumber },
+    impr: { label: 'Impressions', format: formatNumber },
+    // Calculated metrics are handled separately below
+};
+
 export function DashboardPage() {
     const { settings } = useSettings()
-    const activeTab = settings.activeTab || 'daily'
-    const metricOptions = getMetricOptions(activeTab)
+    const activeTab = settings.activeTab || 'Daily'
+    // Use BASE_METRIC_OPTIONS, adapting currency format
+    const metricOptions = Object.entries(BASE_METRIC_OPTIONS).reduce((acc, [key, value]) => {
+        if (key === 'cost' || key === 'value') {
+            acc[key as MetricKey] = { ...value, format: (val) => formatCurrency(val, settings.currency) };
+        } else {
+            acc[key as MetricKey] = value;
+        }
+        return acc;
+    }, {} as MetricOptions);
+
     const [selectedMetrics, setSelectedMetrics] = useState<AllMetricKeys[]>(['cost', 'value'])
     const [chartType, setChartType] = useState<'line' | 'bar'>('line')
     const [activeChart, setActiveChart] = useState<'profit' | 'metrics'>('profit')
@@ -27,7 +46,7 @@ export function DashboardPage() {
     )
 
     // Ensure we're only using daily data for the dashboard
-    const adData = (tabsData?.daily || []) as AdMetric[]
+    const adData = (tabsData?.Daily || []) as AdMetric[]
     const campaigns = getCampaigns(adData)
 
     // Initialize with highest spend campaign
@@ -85,8 +104,7 @@ export function DashboardPage() {
         CTR: { label: 'CTR', format: (val: number) => val.toFixed(1) + '%' },
         CvR: { label: 'CvR', format: (val: number) => val.toFixed(1) + '%' },
         CPA: { label: 'CPA', format: (val: number) => formatCurrency(val, settings.currency) },
-        ROAS: { label: 'ROAS', format: (val: number) => val.toFixed(2) + 'x' },
-        AOV: { label: 'AOV', format: (val: number) => formatCurrency(val, settings.currency) }
+        ROAS: { label: 'ROAS', format: (val: number) => val.toFixed(2) + 'x' }
     }
 
     return (

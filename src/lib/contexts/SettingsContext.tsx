@@ -18,7 +18,7 @@ const defaultSettings: Settings = {
   currency: '$',
   selectedCampaign: undefined,
   campaigns: [],
-  activeTab: 'daily',
+  activeTab: 'Daily',
   optimizationStrategy: 'profit',
   costMetric: 0
 }

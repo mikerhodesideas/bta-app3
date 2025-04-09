@@ -41,7 +41,7 @@ function main() {
     }
     
     // Set up headers
-    const headers = ['Search Term', 'Campaign', 'Impressions', 'Clicks', 'Cost', 'Conversions', 'Conv. Value', 'CPC', 'CTR', 'CvR', 'CPA', 'ROAS', 'AOV'];
+    const headers = ['Search Term', 'Campaign', 'Impressions', 'Clicks', 'Cost', 'Conversions', 'Conv. Value', 'CPC', 'CTR', 'CvR', 'CPA', 'ROAS'];
     
     // Process the data
     const data = processSearchTerms(searchTermRows);
@@ -85,10 +85,9 @@ function processSearchTerms(rows) {
       const convRate = clicks > 0 ? conversions / clicks : 0;
       const cpa = conversions > 0 ? cost / conversions : 0;
       const roas = cost > 0 ? conversionValue / cost : 0;
-      const aov = conversions > 0 ? conversionValue / conversions : 0;
       
       // Add all variables and calculated metrics to a new row
-      const newRow = [searchTerm, campaignName, impressions, clicks, cost, conversions, conversionValue, cpc, ctr, convRate, cpa, roas, aov];
+      const newRow = [searchTerm, campaignName, impressions, clicks, cost, conversions, conversionValue, cpc, ctr, convRate, cpa, roas];
       
       // Add new row to the data array
       data.push(newRow);
