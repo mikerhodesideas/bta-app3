@@ -60,6 +60,10 @@ export type BaseDataRowType = {
     [key: string]: string | number | Date;
 };
 
-export type DataRowType = BaseDataRowType & {
-    isOutlier?: boolean;
+export type DataRowFields = {
+    [key: string]: string | number | Date | undefined;
+};
+
+export type DataRowType = DataRowFields & {
+    isOutlier: boolean;
 }; 

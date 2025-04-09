@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronUp, ChevronDown, AlertTriangle, Trash2, PlusCircle, ArrowUpDown, X, Edit, Activity, BrainCircuit, MessageSquareWarning, Loader2, SearchCheck, ListFilter, Eye, Info } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useDataInsights, PREVIEW_ROW_OPTIONS } from './useDataInsights';
-import type { ColumnType, FilterOperatorType } from './types';
+import type { ColumnType, FilterOperatorType, DataRowType } from './types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
 import { useSettings } from '@/lib/contexts/SettingsContext';
 
 // Helper to format metric values based on name and potential type, enforcing specific decimal rules
-const formatMetricValue = (name: string, value: number | string | Date | undefined | null, currency: string): string => {
+const formatMetricValue = (name: string, value: string | number | Date | undefined, currency: string): string => {
     if (value === undefined || value === null) return 'N/A';
 
     // Handle Date objects first
@@ -338,13 +338,16 @@ export const DataInsights: React.FC = () => {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {data.slice(0, previewRowCount).map((row, rowIndex) => (
+                                    {data.slice(0, previewRowCount).map((row: DataRowType, rowIndex) => (
                                         <TableRow key={rowIndex} className="hover:bg-gray-50 text-sm">
-                                            {columns.map(column => (
-                                                <TableCell key={`${rowIndex}-${column.field}`} className="whitespace-nowrap px-3 py-2 text-gray-800">
-                                                    {formatMetricValue(column.name, row[column.field], settings.currency)}
-                                                </TableCell>
-                                            ))}
+                                            {columns.map(column => {
+                                                const value = column.field === 'isOutlier' ? undefined : row[column.field];
+                                                return (
+                                                    <TableCell key={`${rowIndex}-${column.field}`} className="whitespace-nowrap px-3 py-2 text-gray-800">
+                                                        {formatMetricValue(column.name, value, settings.currency)}
+                                                    </TableCell>
+                                                );
+                                            })}
                                         </TableRow>
                                     ))}
                                     {data.length === 0 && (
@@ -455,14 +458,17 @@ export const DataInsights: React.FC = () => {
                                                     <TableBody>
                                                         {outliers.map((o, index) => (
                                                             <TableRow key={o.id || index} className="hover:bg-gray-50">
-                                                                {outlierDisplayColumns.slice(0, 2).map(col => (
-                                                                    <TableCell
-                                                                        key={`${o.id}-${col.field}`}
-                                                                        className="px-2 py-1.5 whitespace-nowrap text-gray-700"
-                                                                    >
-                                                                        {formatMetricValue(col.name, o.rowData[col.field], settings.currency)}
-                                                                    </TableCell>
-                                                                ))}
+                                                                {outlierDisplayColumns.slice(0, 2).map(col => {
+                                                                    const value = col.field === 'isOutlier' ? undefined : o.rowData[col.field];
+                                                                    return (
+                                                                        <TableCell
+                                                                            key={`${o.id}-${col.field}`}
+                                                                            className="px-2 py-1.5 whitespace-nowrap text-gray-700"
+                                                                        >
+                                                                            {formatMetricValue(col.name, value, settings.currency)}
+                                                                        </TableCell>
+                                                                    );
+                                                                })}
                                                                 <TableCell className="px-2 py-1.5 whitespace-nowrap font-medium text-orange-700">
                                                                     {o.column}
                                                                 </TableCell>

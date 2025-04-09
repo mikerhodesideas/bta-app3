@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSettings } from '@/lib/contexts/SettingsContext';
 import { useDataStore } from '@/store/dataStore';
-import { SHEET_TABS, SheetTab, MAX_RECOMMENDED_INSIGHT_ROWS } from '@/lib/config';
+import { SHEET_TABS, SheetTab, MAX_RECOMMENDED_INSIGHT_ROWS, GEMINI_MODEL } from '@/lib/config';
 import {
     DataSourceType,
     ColumnType,
@@ -65,28 +65,67 @@ export const PREVIEW_ROW_OPTIONS = [5, 10, 30, 50, 100];
 const deriveColumnsFromData = (data: DataRowType[]): ColumnType[] => {
     if (!data || data.length === 0) return [];
     const firstRow = data[0];
-    return Object.keys(firstRow).map(key => {
+
+    // Define the order of metrics as per Google Ads
+    const metricOrder = ['impr', 'clicks', 'cost', 'conv', 'value', 'cpc', 'ctr', 'convrate', 'cpa', 'roas'];
+
+    // First pass to get all columns and their types
+    const columnMap = new Map<string, ColumnType>();
+    Object.keys(firstRow).forEach(key => {
+        // Skip the isOutlier field
+        if (key === 'isOutlier') return;
+
         const value = firstRow[key as keyof typeof firstRow];
         const lowerKey = key.toLowerCase();
         let type: 'date' | 'metric' | 'dimension' = 'dimension';
+
         if (lowerKey === 'date' || lowerKey.endsWith('date') || lowerKey.startsWith('date')) {
             type = 'date';
-        } else if (typeof value === 'number' ||
-            ['impr', 'clicks', 'cost', 'conv', 'value', 'cpc', 'ctr', 'cvr', 'convrate', 'roas', 'cpa'].includes(lowerKey)) {
+        } else if (typeof value === 'number' || metricOrder.includes(lowerKey)) {
             type = 'metric';
         }
-        return {
+
+        columnMap.set(key, {
             field: key,
             name: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
             type: type
-        };
+        });
     });
+
+    // Sort metrics according to the defined order, keep other columns as is
+    const metrics: ColumnType[] = [];
+    const otherColumns: ColumnType[] = [];
+
+    columnMap.forEach(column => {
+        if (column.type === 'metric') {
+            metrics.push(column);
+        } else {
+            otherColumns.push(column);
+        }
+    });
+
+    // Sort metrics based on the predefined order
+    metrics.sort((a, b) => {
+        const aIndex = metricOrder.indexOf(a.field.toLowerCase());
+        const bIndex = metricOrder.indexOf(b.field.toLowerCase());
+        if (aIndex === -1 && bIndex === -1) return a.field.localeCompare(b.field);
+        if (aIndex === -1) return 1;
+        if (bIndex === -1) return -1;
+        return aIndex - bIndex;
+    });
+
+    // Return dimensions first, then dates, then metrics in the correct order
+    return [
+        ...otherColumns.filter(col => col.type === 'dimension'),
+        ...otherColumns.filter(col => col.type === 'date'),
+        ...metrics
+    ];
 };
 
 const convertToDataRows = (rawData: (AdMetric | SearchTermMetric | AdGroupMetric)[], cols: ColumnType[]): DataRowType[] => {
     if (!rawData || !cols || cols.length === 0) return [];
     return rawData.map(row => {
-        const dataRow: DataRowType = {};
+        const dataRow: { [key: string]: string | number | Date | boolean | undefined } = { isOutlier: false };
         cols.forEach(col => {
             const rawValue = row[col.field as keyof typeof row];
             if (col.type === 'date' && typeof rawValue === 'string') {
@@ -103,7 +142,7 @@ const convertToDataRows = (rawData: (AdMetric | SearchTermMetric | AdGroupMetric
                 dataRow[col.field] = rawValue;
             }
         });
-        return dataRow;
+        return dataRow as DataRowType;
     });
 };
 
@@ -128,10 +167,11 @@ export function useDataInsights() {
     const [insights, setInsights] = useState<string | null>(null);
     const [localInsightsSummary, setLocalInsightsSummary] = useState<LocalInsightsSummary | null>(null);
     const [detectedOutliers, setDetectedOutliers] = useState<EnhancedOutlierType[] | null>(null);
-    const [excludeOutliers, setExcludeOutliers] = useState(false);
+    const [excludeOutliers, setExcludeOutliers] = useState(true);
     const [previewRowCount, setPreviewRowCount] = useState<number>(PREVIEW_ROW_OPTIONS[0]);
     const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const [apiError, setApiError] = useState<string | null>(null); // Separate state for API errors
+    const [apiError, setApiError] = useState<string | null>(null);
+    const [rowCountWarning, setRowCountWarning] = useState<string | null>(null);
 
     const resetState = useCallback((resetFiltersAndColumns = true) => {
         if (resetFiltersAndColumns) {
@@ -140,8 +180,9 @@ export function useDataInsights() {
         setInsights(null);
         setLocalInsightsSummary(null);
         setDetectedOutliers(null);
-        setExcludeOutliers(false);
-        setApiError(null); // Reset API error on source change
+        setExcludeOutliers(true);
+        setApiError(null);
+        // Don't reset rowCountWarning here as it should persist
     }, []);
 
     // --- Derived State from Store ---
@@ -184,10 +225,11 @@ export function useDataInsights() {
 
     // Convert raw data to DataRowType using the derived columns
     const baseData = useMemo(() => {
-        return convertToDataRows(rawDataForSelectedTab, columns).map(row => ({
+        const rows = convertToDataRows(rawDataForSelectedTab, columns);
+        return rows.map(row => ({
             ...row,
-            isOutlier: false // Add isOutlier flag to each row
-        }));
+            isOutlier: false
+        })) as DataRowType[];
     }, [rawDataForSelectedTab, columns]);
 
     const totalRows = useMemo(() => baseData.length, [baseData]);
@@ -301,6 +343,14 @@ export function useDataInsights() {
 
     const filteredRows = useMemo(() => filteredAndSortedData.length, [filteredAndSortedData]);
 
+    // Update warning whenever filtered data changes
+    useEffect(() => {
+        const warning = filteredAndSortedData.length > MAX_RECOMMENDED_INSIGHT_ROWS
+            ? `⚠️ You are analyzing ${filteredAndSortedData.length} rows, which exceeds the recommended maximum of ${MAX_RECOMMENDED_INSIGHT_ROWS} rows. This may result in higher API costs. Consider adding filters to reduce the dataset size.`
+            : null;
+        setRowCountWarning(warning);
+    }, [filteredAndSortedData.length]);
+
     // --- Outlier Detection (runs on filtered data, marks rows with isOutlier flag) ---
     useEffect(() => {
         if (!columns.length || !baseData.length || isGeneratingLocalInsights) {
@@ -395,7 +445,10 @@ export function useDataInsights() {
         let localDimensionsSummary: any[] = [];
 
         const metricColumns = columns.filter(col => col.type === 'metric');
-        const dimensionColumns = columns.filter(col => col.type === 'dimension' || col.type === 'date');
+        const dimensionColumns = columns.filter(col =>
+            (col.type === 'dimension' || col.type === 'date') &&
+            col.field !== 'isOutlier'
+        );
 
         localMetricsSummary = metricColumns.map(col => {
             const values = dataToSummarize.map(row => row[col.field]).filter(v => typeof v === 'number' && !isNaN(v)) as number[];
@@ -444,45 +497,19 @@ export function useDataInsights() {
         setIsGeneratingLocalInsights(false);
         console.log('[Insights] Summary calculation complete.');
 
-    }, [columns]);  // Remove excludeOutliers from dependencies to break the cycle
+    }, [columns, excludeOutliers]);  // Add excludeOutliers since it's used in logging
 
     // --- Effect to trigger Summary Calculation ---
     useEffect(() => {
-        if (debounceTimeoutRef.current) {
-            clearTimeout(debounceTimeoutRef.current);
-        }
-
-        // Prevent recalculation if nothing important changed
-        const shouldCalculate =
-            columns.length > 0 &&
-            !globalLoading &&
-            dataForSummary.length > 0;
-
-        if (!shouldCalculate) {
+        // Skip if nothing important changed
+        if (!columns.length || !dataForSummary.length) {
             return;
         }
 
-        // Track if we already calculated for this data set
-        const dataKey = `${dataForSummary.length}-${excludeOutliers}-${columns.length}`;
+        // Calculate immediately without checking previous calculation
+        calculateSummary(dataForSummary);
 
-        if (lastDataKeyRef.current === dataKey) {
-            return; // Skip if we already calculated for this exact data configuration
-        }
-
-        setIsGeneratingLocalInsights(true);
-
-        // Use a longer timeout to avoid rapid recalculations
-        debounceTimeoutRef.current = setTimeout(() => {
-            lastDataKeyRef.current = dataKey;
-            calculateSummary(dataForSummary);
-        }, 800);
-
-        return () => {
-            if (debounceTimeoutRef.current) {
-                clearTimeout(debounceTimeoutRef.current);
-            }
-        };
-    }, [dataForSummary, columns, globalLoading, calculateSummary, excludeOutliers]);
+    }, [dataForSummary, columns, calculateSummary]);  // Keep all dependencies
 
     // --- API Insights Generation (uses filteredAndSortedData, respects excludeOutliers) ---
     const handleOutlierDecisionAndGenerateApiInsights = useCallback(async (prompt: string) => {
@@ -505,39 +532,118 @@ export function useDataInsights() {
             return;
         }
 
-        const limitedDataForApi = dataForApi.slice(0, MAX_RECOMMENDED_INSIGHT_ROWS);
-        const rowLimitInfo = dataForApi.length > MAX_RECOMMENDED_INSIGHT_ROWS
-            ? ` (showing top ${MAX_RECOMMENDED_INSIGHT_ROWS} rows based on current sort)`
-            : '';
-        const fullPrompt = `Dataset: ${selectedSource?.name || 'Selected Data'}\nFilters Applied: ${filters.length > 0 ? filters.map(f => `${f.field} ${f.operator} ${f.value}`).join(', ') : 'None'}\nTotal Rows Matching Filters: ${filteredAndSortedData.length}\nRows Sent for Analysis: ${limitedDataForApi.length}${rowLimitInfo}\nOutlier Handling: ${outlierInfoForPrompt}\n\nUser Prompt: ${prompt}`;
+        const fullPrompt = `Dataset: ${selectedSource?.name || 'Selected Data'}\nFilters Applied: ${filters.length > 0 ? filters.map(f => `${f.field} ${f.operator} ${f.value}`).join(', ') : 'None'}\nTotal Rows Matching Filters: ${filteredAndSortedData.length}\nRows Being Analyzed: ${dataForApi.length}\nOutlier Handling: ${outlierInfoForPrompt}\n\nUser Prompt: ${prompt}`;
 
-        console.log(`[Insights] Sending ${limitedDataForApi.length} rows to API. Outliers excluded: ${excludeOutliers}`);
+        console.log(`[Insights] Sending ${dataForApi.length} rows to API. Outliers excluded: ${excludeOutliers}`);
+
+        // Log API key status for debugging
+        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+        console.log('[Insights] API Key status:', {
+            exists: !!apiKey,
+            length: apiKey?.length || 0
+        });
+
+        if (!apiKey) {
+            const errorMsg = 'Gemini API key not found. Please check your .env.local file and ensure NEXT_PUBLIC_GEMINI_API_KEY is set.';
+            setApiError(errorMsg);
+            setLoadingInsights(false);
+            return;
+        }
 
         try {
-            const response = await fetch('/api/generate-insights', {
+            // Define request body incorporating user's changes AND including the actual data
+            const requestBody = {
+                contents: [{
+                    parts: [
+                        // Part 1: The descriptive prompt context
+                        { text: fullPrompt },
+                        // Part 2: The actual data rows, formatted as JSON
+                        { text: `\n\nData:\n${JSON.stringify(dataForApi, null, 2)}` }
+                    ]
+                }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 2000
+                    // Assuming user intended to remove topK, topP based on their diff
+                }
+                // safetySettings removed based on user's diff
+            };
+
+            console.log('[Insights] Sending request:', JSON.stringify(requestBody, null, 2));
+
+            // Perform the API fetch
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    data: limitedDataForApi,
-                    columns: columns,
-                    prompt: fullPrompt,
-                    sourceName: selectedSource?.name || 'Selected Data'
-                }),
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
             });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || `API request failed with status ${response.status}`);
+
+            // Parse the JSON response
+            const responseJson = await response.json();
+
+            // Log details for debugging
+            console.log('[Insights] Parsed API Response Object:', responseJson);
+            if (responseJson.promptFeedback) {
+                console.warn('[Insights] API Response included promptFeedback:', responseJson.promptFeedback);
             }
-            const result = await response.json();
-            setInsights(result.insights);
-            console.log('[Insights] API insights received.');
+            console.log('[Insights] Full API Response (Stringified):', {
+                status: response.status,
+                headers: Object.fromEntries(response.headers.entries()),
+                body: JSON.stringify(responseJson, null, 2)
+            });
+
+            // Check if the response status is OK
+            if (!response.ok) {
+                console.error('[Insights] API Error Response:', responseJson);
+                const errorMessage = responseJson.error?.message || `API request failed with status ${response.status}`;
+                throw new Error(errorMessage); // Throw error to be caught by catch block
+            }
+
+            // --- Process the response (extract insights or feedback) ---
+            let insightText: string | null = null;
+            const candidate = responseJson.candidates?.[0];
+            const blockFeedback = responseJson.promptFeedback;
+
+            if (candidate?.content?.parts?.[0]?.text) {
+                // Found standard candidate text
+                insightText = candidate.content.parts[0].text;
+                console.log('[Insights] API insights received successfully via candidates.');
+            } else if (blockFeedback?.blockReason) {
+                // Found block reason in promptFeedback
+                insightText = `API request was blocked. Reason: ${blockFeedback.blockReason}.`;
+                if (blockFeedback.safetyRatings) {
+                    insightText += ` Details: ${JSON.stringify(blockFeedback.safetyRatings)}`;
+                }
+                console.warn('[Insights] API response blocked, displaying block reason.');
+                setApiError(insightText); // Show block reason as an error too
+            }
+
+            // Update state based on extracted text or lack thereof
+            if (insightText) {
+                setInsights(insightText);
+                setApiError(null); // Clear previous API errors
+            } else {
+                // Successful response but no usable content
+                if (!apiError) { // Avoid overwriting existing errors like block reasons
+                    const errorMsg = 'API call successful (200 OK), but no insights content or block reason was found.';
+                    console.error('[Insights]', errorMsg, 'Response:', responseJson);
+                    setApiError(errorMsg);
+                }
+                setInsights(null); // Ensure insights are cleared
+            }
+
         } catch (error) {
-            console.error('Error generating API insights:', error);
-            setApiError(error instanceof Error ? error.message : 'An unknown error occurred');
+            // Handle fetch errors or errors thrown from response check
+            console.error('Error during API insights generation:', error);
+            setApiError(error instanceof Error ? error.message : 'An unknown error occurred during the API call');
+            setInsights(null); // Clear insights on error
         } finally {
+            // Ensure loading state is always turned off
             setLoadingInsights(false);
         }
-    }, [filteredAndSortedData, detectedOutliers, columns, selectedSource, filters, excludeOutliers]);
+    }, [filteredAndSortedData, detectedOutliers, selectedSource, filters, excludeOutliers, apiError]); // Dependencies for useCallback
 
     // Filter/Sort management functions (remain the same)
     const addFilter = useCallback(() => {
@@ -545,7 +651,8 @@ export function useDataInsights() {
         const defaultField = columns[0].field;
         const defaultType = columns[0].type;
         const defaultOperators = getFilterOperatorsForType(defaultType);
-        const defaultOperator = defaultOperators.length > 0 ? defaultOperators[0].value : 'contains';
+        const defaultOperator = defaultType === 'metric' ? 'greater_than' :
+            (defaultOperators.length > 0 ? defaultOperators[0].value : 'contains');
         setFilters(prev => [
             ...prev,
             { id: Date.now(), field: defaultField, operator: defaultOperator, value: '' }
@@ -619,7 +726,7 @@ export function useDataInsights() {
         dataSources,
         selectedSource,
         setSelectedSource,
-        data: filteredAndSortedData,
+        data: filteredAndSortedData as DataRowType[],
         columns,
         loading: globalLoading || isGeneratingLocalInsights,
         isGeneratingLocalInsights,
@@ -634,6 +741,7 @@ export function useDataInsights() {
         setExcludeOutliers,
         insights,
         apiError: apiError || globalError,
+        rowCountWarning,
         addFilter,
         updateFilter,
         removeFilter,

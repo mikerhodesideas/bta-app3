@@ -15,10 +15,7 @@ export const MAX_RECOMMENDED_INSIGHT_ROWS = 50;
 
 // Gemini Configuration
 export const GEMINI_MODEL = 'gemini-2.5-pro-preview-03-25';
-// IMPORTANT: Store your Gemini API Key securely.
-// It's recommended to use environment variables (e.g., process.env.GEMINI_API_KEY)
-// and access it server-side, NOT directly in client-side code.
-// Add GEMINI_API_KEY='YOUR_API_KEY_HERE' to your .env.local file
+
 
 export interface TabConfig {
     // Define structure for tab configurations if needed
