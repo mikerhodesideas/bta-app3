@@ -3,8 +3,14 @@ import './globals.css'
 import { Inter } from 'next/font/google'
 import { SettingsProvider } from '@/lib/contexts/SettingsContext'
 import { Navigation } from '@/components/Navigation'
+import { Metadata } from 'next'
 
 const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: "Build The Agent 2025",
+  description: "A starter app for participants of the workshop",
+};
 
 export default function RootLayout({
   children,
