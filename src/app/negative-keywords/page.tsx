@@ -21,6 +21,7 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Info, AlertTriangle, CheckCircle } from "lucide-react"
+import StackedDistributionBar from '@/components/ui/StackedDistributionBar'
 
 interface EnabledCampaign extends CampaignStatus {
     // Add cost later if needed
@@ -216,7 +217,7 @@ export default function NegativeKeywordsPage() {
     const allCampaignNegatives = useMemo(() => tabData?.campaignNegatives || [], [tabData?.campaignNegatives]);
     const allAdGroupNegatives = useMemo(() => tabData?.adGroupNegatives || [], [tabData?.adGroupNegatives]);
 
-    // --- Account-Wide Audit Calculations ---
+    // --- Account-Wide Audit Calculations --- 
     const accountWideAudit = useMemo(() => {
         if (selectedCampaignId || !tabData || enabledSearchCampaigns.length === 0) return null;
 
@@ -242,6 +243,19 @@ export default function NegativeKeywordsPage() {
         const totalRiskyBroad = relevantCampaignNegs.filter(neg => isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType)).length +
             relevantAdGroupNegs.filter(neg => isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType)).length;
 
+        // --- Calculate Account-Wide Shared List Distribution --- 
+        const appliedListIds = new Set(
+            allNegativeKeywordLists.filter(list => enabledSearchIds.has(list.appliedToCampaignId)).map(list => list.listId)
+        );
+        const uniqueSharedKeywordsApplied = new Map<string, SharedListKeyword>();
+        allSharedKeywordsSource.forEach(kw => {
+            if (appliedListIds.has(kw.listId) && !uniqueSharedKeywordsApplied.has(kw.criterionId)) {
+                uniqueSharedKeywordsApplied.set(kw.criterionId, kw);
+            }
+        });
+        const sharedDistribution = calculateDistribution(Array.from(uniqueSharedKeywordsApplied.values()));
+        // --- End Shared List Distribution Calculation --- 
+
         return {
             totalCampaigns: enabledSearchCampaigns.length,
             campaignsWithZeroCampaignNegs,
@@ -249,9 +263,29 @@ export default function NegativeKeywordsPage() {
             campaignDistribution,
             adGroupDistribution,
             totalRiskyBroad,
+            sharedDistribution,
         }
 
-    }, [selectedCampaignId, tabData, enabledSearchCampaigns, allCampaignNegatives, allAdGroupNegatives]);
+    }, [selectedCampaignId, tabData, enabledSearchCampaigns, allCampaignNegatives, allAdGroupNegatives, allNegativeKeywordLists, allSharedKeywordsSource]);
+
+    // --- Calculate List Application Stats --- 
+    const listApplicationStats = useMemo(() => {
+        if (!tabData || enabledSearchCampaigns.length === 0) return null;
+
+        const appliedListCampaignIds = new Set(
+            allNegativeKeywordLists.map(list => list.appliedToCampaignId)
+        );
+
+        let campaignsWithoutLists = 0;
+        enabledSearchCampaigns.forEach(campaign => {
+            if (!appliedListCampaignIds.has(campaign.campaignId)) {
+                campaignsWithoutLists++;
+            }
+        });
+
+        return { campaignsWithoutLists };
+
+    }, [tabData, enabledSearchCampaigns, allNegativeKeywordLists]);
 
     // --- Campaign-Specific Audit Calculations --- 
     const campaignSpecificAudit = useMemo(() => {
@@ -400,9 +434,9 @@ export default function NegativeKeywordsPage() {
 
                         {/* --- Account-Wide Audit Display --- */}
                         {!selectedCampaignId && accountWideAudit && (
-                            <Card className="mt-6">
-                                <CardHeader>
-                                    <CardTitle className="text-lg font-semibold flex items-center">
+                            <Card className="mt-6 border-blue-200 border">
+                                <CardHeader className="bg-blue-50">
+                                    <CardTitle className="text-xl font-semibold flex items-center">
                                         Account-Wide Negative Audit (Enabled Search Campaigns: {accountWideAudit.totalCampaigns})
                                     </CardTitle>
                                     <CardDescription className="text-xs pt-1">
@@ -410,38 +444,53 @@ export default function NegativeKeywordsPage() {
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="text-sm space-y-4">
-                                    {/* Stat Row */}
+                                    {/* Stat Row - Changed back to 3 columns */}
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                                        <div className="p-3 bg-slate-50 rounded">
-                                            <p className="text-xs text-muted-foreground">Campaigns w/o Campaign Negs</p>
-                                            <p className={`text-xl font-bold ${accountWideAudit.campaignsWithZeroCampaignNegs > 0 ? 'text-orange-600' : 'text-green-600'}`}>{accountWideAudit.campaignsWithZeroCampaignNegs}</p>
+                                        {/* Added Campaigns w/o Lists Applied */}
+                                        {listApplicationStats && (
+                                            <div className="p-3 bg-blue-50/50 rounded border border-blue-100">
+                                                <p className="text-xs text-muted-foreground mb-1">Campaigns w/o Lists Applied</p>
+                                                <p className={`text-2xl font-semibold ${listApplicationStats.campaignsWithoutLists > 0 ? 'text-orange-600' : 'text-green-600'}`}>{listApplicationStats.campaignsWithoutLists}</p>
+                                            </div>
+                                        )}
+                                        <div className="p-3 bg-blue-50/50 rounded border border-blue-100">
+                                            <p className="text-xs text-muted-foreground mb-1">Campaigns w/o Campaign Negs</p>
+                                            <p className={`text-2xl font-semibold ${accountWideAudit.campaignsWithZeroCampaignNegs > 0 ? 'text-orange-600' : 'text-green-600'}`}>{accountWideAudit.campaignsWithZeroCampaignNegs}</p>
                                         </div>
-                                        <div className="p-3 bg-slate-50 rounded">
-                                            <p className="text-xs text-muted-foreground">Campaigns w/o AdGroup Negs</p>
-                                            <p className={`text-xl font-bold ${accountWideAudit.campaignsWithZeroAdGroupNegs > 0 ? 'text-orange-600' : 'text-green-600'}`}>{accountWideAudit.campaignsWithZeroAdGroupNegs}</p>
-                                        </div>
-                                        <div className="p-3 bg-slate-50 rounded">
-                                            <p className="text-xs text-muted-foreground">Risky Broad Matches Found</p>
-                                            <p className={`text-xl font-bold ${accountWideAudit.totalRiskyBroad > 0 ? 'text-orange-600' : 'text-green-600'}`}>{accountWideAudit.totalRiskyBroad}</p>
+                                        <div className="p-3 bg-blue-50/50 rounded border border-blue-100">
+                                            <p className="text-xs text-muted-foreground mb-1">Campaigns w/o AdGroup Negs</p>
+                                            <p className={`text-2xl font-semibold ${accountWideAudit.campaignsWithZeroAdGroupNegs > 0 ? 'text-orange-600' : 'text-green-600'}`}>{accountWideAudit.campaignsWithZeroAdGroupNegs}</p>
                                         </div>
                                     </div>
 
-                                    {/* Distribution Text Row */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t">
+                                    {/* Distribution Text Row - Back to 3 columns, shared list added */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t">
+                                        {/* Shared List Distribution Block */}
                                         <div>
-                                            <h4 className="font-medium mb-2 text-center text-xs text-muted-foreground">Overall Campaign Negatives Distribution</h4>
+                                            <StackedDistributionBar distribution={accountWideAudit.sharedDistribution} />
+                                            <h4 className="font-medium mb-2 text-center text-xs text-muted-foreground">Overall Shared List Distribution</h4>
                                             <div className="text-xs text-center space-y-1">
-                                                <div>Exact: {accountWideAudit.campaignDistribution.EXACT}%</div>
-                                                <div>Phrase: {accountWideAudit.campaignDistribution.PHRASE}%</div>
-                                                <div>Broad: {accountWideAudit.campaignDistribution.BROAD}%</div>
+                                                <div>Exact: <span className="font-semibold">{accountWideAudit.sharedDistribution.EXACT}%</span></div>
+                                                <div>Phrase: <span className="font-semibold">{accountWideAudit.sharedDistribution.PHRASE}%</span></div>
+                                                <div>Broad: <span className="font-semibold">{accountWideAudit.sharedDistribution.BROAD}%</span></div>
                                             </div>
                                         </div>
                                         <div>
+                                            <StackedDistributionBar distribution={accountWideAudit.campaignDistribution} />
+                                            <h4 className="font-medium mb-2 text-center text-xs text-muted-foreground">Overall Campaign Negatives Distribution</h4>
+                                            <div className="text-xs text-center space-y-1">
+                                                <div>Exact: <span className="font-semibold">{accountWideAudit.campaignDistribution.EXACT}%</span></div>
+                                                <div>Phrase: <span className="font-semibold">{accountWideAudit.campaignDistribution.PHRASE}%</span></div>
+                                                <div>Broad: <span className="font-semibold">{accountWideAudit.campaignDistribution.BROAD}%</span></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <StackedDistributionBar distribution={accountWideAudit.adGroupDistribution} />
                                             <h4 className="font-medium mb-2 text-center text-xs text-muted-foreground">Overall Ad Group Negatives Distribution</h4>
                                             <div className="text-xs text-center space-y-1">
-                                                <div>Exact: {accountWideAudit.adGroupDistribution.EXACT}%</div>
-                                                <div>Phrase: {accountWideAudit.adGroupDistribution.PHRASE}%</div>
-                                                <div>Broad: {accountWideAudit.adGroupDistribution.BROAD}%</div>
+                                                <div>Exact: <span className="font-semibold">{accountWideAudit.adGroupDistribution.EXACT}%</span></div>
+                                                <div>Phrase: <span className="font-semibold">{accountWideAudit.adGroupDistribution.PHRASE}%</span></div>
+                                                <div>Broad: <span className="font-semibold">{accountWideAudit.adGroupDistribution.BROAD}%</span></div>
                                             </div>
                                         </div>
                                     </div>
@@ -453,9 +502,9 @@ export default function NegativeKeywordsPage() {
                         {selectedCampaignId && campaignSpecificAudit && (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                                 {/* Shared Lists Card */}
-                                <Card className="col-span-1 flex flex-col">
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="flex justify-between items-center text-base font-semibold">
+                                <Card className="col-span-1 flex flex-col border-purple-200 border">
+                                    <CardHeader className="pb-2 bg-purple-50">
+                                        <CardTitle className="flex justify-between items-center text-lg font-semibold">
                                             <span>Shared Lists</span>
                                             <Select value={sharedListFilter} onValueChange={(v) => setSharedListFilter(v as SharedListFilter)} disabled={!selectedCampaignId && sharedListFilter !== 'All'}>
                                                 {/* Select Trigger/Content */}
@@ -470,10 +519,12 @@ export default function NegativeKeywordsPage() {
                                         </CardTitle>
                                         {/* Campaign Specific Shared List Insights */}
                                         <div className="text-xs text-muted-foreground pt-2 border-t mt-2 space-y-1">
-                                            <p>Applied Keywords: {campaignSpecificAudit.totalAppliedSharedKeywords}</p>
-                                            <p>Distribution: Exact {campaignSpecificAudit.sharedListKeywordsDistribution.EXACT}% &bull; Phrase {campaignSpecificAudit.sharedListKeywordsDistribution.PHRASE}% &bull; Broad {campaignSpecificAudit.sharedListKeywordsDistribution.BROAD}%</p>
+                                            <p>Applied Keywords: <span className="font-semibold text-sm">{campaignSpecificAudit.totalAppliedSharedKeywords}</span></p>
+                                            <p>Distribution: Exact:<span className="font-semibold">{campaignSpecificAudit.sharedListKeywordsDistribution.EXACT}%</span> Phrase:<span className="font-semibold">{campaignSpecificAudit.sharedListKeywordsDistribution.PHRASE}%</span> Broad:<span className="font-semibold">{campaignSpecificAudit.sharedListKeywordsDistribution.BROAD}%</span></p>
+                                            {/* Placeholder for Stacked Bar */}
+                                            <StackedDistributionBar distribution={campaignSpecificAudit.sharedListKeywordsDistribution} />
                                             {campaignSpecificAudit.riskySharedBroad > 0 && (
-                                                <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" />{campaignSpecificAudit.riskySharedBroad} risky broad match{campaignSpecificAudit.riskySharedBroad !== 1 ? 'es' : ''}</div>
+                                                <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" /><span className="font-semibold">{campaignSpecificAudit.riskySharedBroad}</span> risky broad match{campaignSpecificAudit.riskySharedBroad !== 1 ? 'es' : ''}</div>
                                             )}
                                         </div>
                                     </CardHeader>
@@ -532,9 +583,9 @@ export default function NegativeKeywordsPage() {
                                 </Card>
 
                                 {/* Campaign Level Negatives Card */}
-                                <Card className="col-span-1 flex flex-col">
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="flex justify-between items-center text-base font-semibold">
+                                <Card className="col-span-1 flex flex-col border-teal-200 border">
+                                    <CardHeader className="pb-2 bg-teal-50">
+                                        <CardTitle className="flex justify-between items-center text-lg font-semibold">
                                             <span>Campaign Level</span>
                                             <Select value={campaignMatchTypeFilter} onValueChange={(v) => setCampaignMatchTypeFilter(v as MatchTypeFilter)} disabled={!selectedCampaignId}>
                                                 {/* Select Trigger/Content */}
@@ -550,10 +601,12 @@ export default function NegativeKeywordsPage() {
                                         </CardTitle>
                                         {/* Campaign Specific Insights */}
                                         <div className="text-xs text-muted-foreground pt-2 border-t mt-2 space-y-1">
-                                            <p>Total Negatives: {campaignSpecificAudit.totalCampaignNegs}</p>
-                                            <p>Distribution: Exact {campaignSpecificAudit.campaignDistribution.EXACT}% &bull; Phrase {campaignSpecificAudit.campaignDistribution.PHRASE}% &bull; Broad {campaignSpecificAudit.campaignDistribution.BROAD}%</p>
+                                            <p>Total Negatives: <span className="font-semibold text-sm">{campaignSpecificAudit.totalCampaignNegs}</span></p>
+                                            <p>Distribution: Exact:<span className="font-semibold">{campaignSpecificAudit.campaignDistribution.EXACT}%</span> Phrase:<span className="font-semibold">{campaignSpecificAudit.campaignDistribution.PHRASE}%</span> Broad:<span className="font-semibold">{campaignSpecificAudit.campaignDistribution.BROAD}%</span></p>
+                                            {/* Placeholder for Stacked Bar */}
+                                            <StackedDistributionBar distribution={campaignSpecificAudit.campaignDistribution} />
                                             {campaignSpecificAudit.riskyCampaignBroad > 0 && (
-                                                <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" />{campaignSpecificAudit.riskyCampaignBroad} risky broad match{campaignSpecificAudit.riskyCampaignBroad !== 1 ? 'es' : ''}</div>
+                                                <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" /><span className="font-semibold">{campaignSpecificAudit.riskyCampaignBroad}</span> risky broad match{campaignSpecificAudit.riskyCampaignBroad !== 1 ? 'es' : ''}</div>
                                             )}
                                         </div>
                                     </CardHeader>
@@ -592,9 +645,9 @@ export default function NegativeKeywordsPage() {
                                 </Card>
 
                                 {/* Ad Group Level Negatives Card */}
-                                <Card className="col-span-1 flex flex-col">
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="flex justify-between items-center text-base font-semibold">
+                                <Card className="col-span-1 flex flex-col border-amber-200 border">
+                                    <CardHeader className="pb-2 bg-amber-50">
+                                        <CardTitle className="flex justify-between items-center text-lg font-semibold">
                                             <span>Ad Group Level</span>
                                             <Select value={adGroupMatchTypeFilter} onValueChange={(v) => setAdGroupMatchTypeFilter(v as MatchTypeFilter)} disabled={!selectedCampaignId}>
                                                 {/* Select Trigger/Content */}
@@ -610,10 +663,12 @@ export default function NegativeKeywordsPage() {
                                         </CardTitle>
                                         {/* Campaign Specific Insights */}
                                         <div className="text-xs text-muted-foreground pt-2 border-t mt-2 space-y-1">
-                                            <p>Total Keywords: {campaignSpecificAudit.totalAdGroupNegs} in {adGroupNegsGroupedForDisplay.length} groups</p>
-                                            <p>Distribution: Exact {campaignSpecificAudit.adGroupDistribution.EXACT}% &bull; Phrase {campaignSpecificAudit.adGroupDistribution.PHRASE}% &bull; Broad {campaignSpecificAudit.adGroupDistribution.BROAD}%</p>
+                                            <p>Total Keywords: <span className="font-semibold text-sm">{totalFilteredAdGroupNegativesCount}</span> in {adGroupNegsGroupedForDisplay.length} groups with negatives</p>
+                                            <p>Distribution: Exact:<span className="font-semibold">{campaignSpecificAudit.adGroupDistribution.EXACT}%</span> Phrase:<span className="font-semibold">{campaignSpecificAudit.adGroupDistribution.PHRASE}%</span> Broad:<span className="font-semibold">{campaignSpecificAudit.adGroupDistribution.BROAD}%</span></p>
+                                            {/* Placeholder for Stacked Bar */}
+                                            <StackedDistributionBar distribution={campaignSpecificAudit.adGroupDistribution} />
                                             {campaignSpecificAudit.riskyAdGroupBroad > 0 && (
-                                                <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" />{campaignSpecificAudit.riskyAdGroupBroad} risky broad match{campaignSpecificAudit.riskyAdGroupBroad !== 1 ? 'es' : ''}</div>
+                                                <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" /><span className="font-semibold">{campaignSpecificAudit.riskyAdGroupBroad}</span> risky broad match{campaignSpecificAudit.riskyAdGroupBroad !== 1 ? 'es' : ''}</div>
                                             )}
                                         </div>
                                     </CardHeader>
