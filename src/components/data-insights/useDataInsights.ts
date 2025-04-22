@@ -178,6 +178,10 @@ export function useDataInsights() {
     const [loadingOpenaiInsights, setLoadingOpenaiInsights] = useState<boolean>(false);
     const [geminiError, setGeminiError] = useState<string | null>(null);
     const [openaiError, setOpenaiError] = useState<string | null>(null);
+    // Add state for Anthropic side-by-side
+    const [anthropicInsights, setAnthropicInsights] = useState<string | null>(null);
+    const [loadingAnthropicInsights, setLoadingAnthropicInsights] = useState<boolean>(false);
+    const [anthropicError, setAnthropicError] = useState<string | null>(null);
 
     // Add state for token usage
     const [geminiTokenUsage, setGeminiTokenUsage] = useState<TokenUsage | null>(null);
@@ -198,6 +202,13 @@ export function useDataInsights() {
         setOpenaiInsights(null);
         setGeminiError(null);
         setOpenaiError(null);
+        // Reset Anthropic state
+        setAnthropicInsights(null);
+        setLoadingAnthropicInsights(false); // Ensure loading is reset
+        setAnthropicError(null);
+        // Reset token usage
+        setGeminiTokenUsage(null);
+        setOpenaiTokenUsage(null);
         setAnthropicTokenUsage(null);
         // Reset time series flag on source change
         setIsTimeSeries(false);
@@ -566,94 +577,152 @@ export function useDataInsights() {
 
     }, [dataForSummary, columns, calculateSummary]);  // Keep all dependencies
 
-    // --- Side by Side Insights Generation ---
-    const handleGenerateSideBySideInsights = useCallback(async (prompt: string) => {
-        setGeminiInsights(null);
-        setOpenaiInsights(null);
-        setGeminiError(null);
-        setOpenaiError(null);
-        setLoadingGeminiInsights(true);
-        setLoadingOpenaiInsights(true);
+    // --- SIDE-BY-SIDE INSIGHTS GENERATION ---
+    const handleGenerateSideBySideInsights = useCallback(async (prompt: string, providers: [LLMProvider, LLMProvider]) => {
+        if (!prompt || !localInsightsSummary || !dataForSummary.length) {
+            console.error("[Insights] Missing required data for side-by-side generation");
+            return;
+        }
 
-        // Reset token usage
-        setGeminiTokenUsage(null);
-        setOpenaiTokenUsage(null);
+        // Clear previous errors/results for the selected providers
+        providers.forEach(provider => {
+            if (provider === 'gemini') {
+                setGeminiInsights(null);
+                setGeminiError(null);
+                setGeminiTokenUsage(null);
+                setLoadingGeminiInsights(true);
+            } else if (provider === 'openai') {
+                setOpenaiInsights(null);
+                setOpenaiError(null);
+                setOpenaiTokenUsage(null);
+                setLoadingOpenaiInsights(true);
+            } else if (provider === 'anthropic') {
+                setAnthropicInsights(null);
+                setAnthropicError(null);
+                setAnthropicTokenUsage(null);
+                setLoadingAnthropicInsights(true);
+            }
+        });
 
-        let dataForApi = filteredAndSortedData;
-        let outlierInfoForPrompt = isTimeSeries
+        const dataForAnalysis = !isTimeSeries && excludeOutliers && detectedOutliers
+            ? dataForSummary.filter(row => !detectedOutliers.some(o => o.rowIndex === row.originalIndex))
+            : dataForSummary;
+
+        // --- Construct sourceInfo (Mirroring single insight generation) ---
+        const outlierInfoForPrompt = isTimeSeries
             ? "Time series data detected; outliers were not checked or excluded."
             : (excludeOutliers && detectedOutliers && detectedOutliers.length > 0
                 ? `${detectedOutliers.length} potential outliers were excluded based on standard deviation analysis.`
                 : "Outliers were included.");
 
-        if (excludeOutliers && detectedOutliers && detectedOutliers.length > 0) {
-            const outlierRowIndices = new Set(detectedOutliers.map(o => o.rowIndex));
-            dataForApi = filteredAndSortedData.filter((_, index) => !outlierRowIndices.has(index));
-            outlierInfoForPrompt = `${detectedOutliers.length} potential outliers were excluded based on standard deviation analysis.`;
-        }
-
-        if (dataForApi.length === 0) {
-            const noDataError = 'No data available to send for AI analysis after filtering (and potentially outlier removal).';
-            setGeminiError(noDataError);
-            setOpenaiError(noDataError);
-            setLoadingGeminiInsights(false);
-            setLoadingOpenaiInsights(false);
-            return;
-        }
-
-        // Prepare the source info
         const sourceInfo = {
             name: selectedSource?.name || 'Selected Data',
             filters: filters.length > 0 ? filters.map(f => `${f.field} ${f.operator} ${f.value}`).join(', ') : 'None',
-            totalRows: filteredAndSortedData.length,
-            rowsAnalyzed: dataForApi.length,
+            totalRows: totalRows, // Use totalRows before outlier exclusion
+            rowsAnalyzed: dataForAnalysis.length,
             outlierInfo: outlierInfoForPrompt
         };
+        // --- End construct sourceInfo ---
 
-        // Generate insights with both providers in parallel
-        const apiOptions = { data: dataForApi, sourceInfo, prompt };
+        // Prepare the payload with sourceInfo
+        const payload: GenerateInsightsOptions = {
+            prompt,
+            data: dataForAnalysis,
+            sourceInfo: sourceInfo,
+            // The following were removed as they are now part of sourceInfo or not directly needed by API
+            // columns,
+            // localSummary: localInsightsSummary,
+            // currency: settings.currency,
+        };
 
-        // Start both API calls in parallel
-        const geminiPromise = generateInsightsWithProvider(apiOptions, 'gemini')
-            .then(result => {
-                setGeminiInsights(result.content);
-                setGeminiTokenUsage(result.usage);
-                return result;
-            })
-            .catch(error => {
-                console.error('[Insights] Error during Gemini insights generation:', error);
-                setGeminiError(error instanceof Error ? error.message : 'An unknown error occurred during the Gemini API call');
-                return null;
-            })
-            .finally(() => {
-                setLoadingGeminiInsights(false);
+        console.log(`[Insights] Generating side-by-side insights for ${providers.join(' and ')} with ${dataForAnalysis.length} rows using payload:`, payload);
+
+        try {
+            const insightPromises = providers.map(provider =>
+                generateInsightsWithProvider(payload, provider)
+            );
+
+            const results = await Promise.allSettled(insightPromises);
+
+            results.forEach((result, index) => {
+                const provider = providers[index];
+                if (result.status === 'fulfilled') {
+                    const { content, tokenUsage, error } = result.value;
+                    if (error) {
+                        console.error(`[Insights] Error from ${provider}:`, error);
+                        if (provider === 'gemini') setGeminiError(error);
+                        else if (provider === 'openai') setOpenaiError(error);
+                        else if (provider === 'anthropic') setAnthropicError(error);
+                    } else {
+                        if (provider === 'gemini') {
+                            setGeminiInsights(content);
+                            setGeminiTokenUsage(tokenUsage ?? null);
+                        } else if (provider === 'openai') {
+                            setOpenaiInsights(content);
+                            setOpenaiTokenUsage(tokenUsage ?? null);
+                        } else if (provider === 'anthropic') {
+                            setAnthropicInsights(content);
+                            setAnthropicTokenUsage(tokenUsage ?? null);
+                        }
+                    }
+                } else {
+                    // Promise rejected
+                    const reason = result.reason || 'Unknown error during API call';
+                    console.error(`[Insights] API call failed for ${provider}:`, reason);
+                    const errorMessage = typeof reason === 'string' ? reason : (reason as Error)?.message || 'Failed to generate insights';
+                    if (provider === 'gemini') setGeminiError(errorMessage);
+                    else if (provider === 'openai') setOpenaiError(errorMessage);
+                    else if (provider === 'anthropic') setAnthropicError(errorMessage);
+                }
             });
 
-        const openaiPromise = generateInsightsWithProvider(apiOptions, 'openai')
-            .then(result => {
-                setOpenaiInsights(result.content);
-                setOpenaiTokenUsage(result.usage);
-                return result;
-            })
-            .catch(error => {
-                console.error('[Insights] Error during OpenAI insights generation:', error);
-                setOpenaiError(error instanceof Error ? error.message : 'An unknown error occurred during the OpenAI API call');
-                return null;
-            })
-            .finally(() => {
-                setLoadingOpenaiInsights(false);
+        } catch (err: any) {
+            console.error("[Insights] Unexpected error during side-by-side generation:", err);
+            // Set a general error for both? Or decide how to handle this.
+            // For now, setting the error for both requested providers
+            providers.forEach(provider => {
+                const msg = err.message || 'An unexpected error occurred';
+                if (provider === 'gemini') setGeminiError(msg);
+                else if (provider === 'openai') setOpenaiError(msg);
+                else if (provider === 'anthropic') setAnthropicError(msg);
             });
-
-        // Wait for both to complete (we only care that they've finished, not the actual results here)
-        await Promise.allSettled([geminiPromise, openaiPromise]);
-
-    }, [filteredAndSortedData, detectedOutliers, selectedSource, filters, excludeOutliers, isTimeSeries]);
+        } finally {
+            // Stop loading indicators for the requested providers
+            providers.forEach(provider => {
+                if (provider === 'gemini') setLoadingGeminiInsights(false);
+                else if (provider === 'openai') setLoadingOpenaiInsights(false);
+                else if (provider === 'anthropic') setLoadingAnthropicInsights(false);
+            });
+        }
+    }, [
+        localInsightsSummary,
+        excludeOutliers,
+        detectedOutliers,
+        isTimeSeries,
+        columns,
+        settings.currency,
+        dataForSummary,
+        totalRows,
+        selectedSource,
+        filters
+    ]);
 
     // --- Single API Insights Generation ---
     const handleOutlierDecisionAndGenerateApiInsights = useCallback(async (prompt: string) => {
-        // If side by side is enabled, use that function instead
+        // If side by side is enabled, use that function instead, passing the current single provider
         if (showSideBySide) {
-            handleGenerateSideBySideInsights(prompt);
+            // This case should ideally be handled by the component directly calling handleGenerateSideBySideInsights
+            // with the *two* selected providers. This function is primarily for single-provider generation.
+            // However, to maintain current structure, we'll log a warning and potentially call side-by-side
+            // with default providers if needed, though the component should manage this.
+            console.warn("[Insights] handleOutlierDecisionAndGenerateApiInsights called while showSideBySide is true. Component should call handleGenerateSideBySideInsights directly.");
+            // Optionally trigger side-by-side with default/current providers if necessary, but ideally prevent this path.
+            // handleGenerateSideBySideInsights(prompt, [llmProvider, /* determine second provider */ ]);
+            return; // Prevent single generation when side-by-side is active
+        }
+
+        if (!prompt || !localInsightsSummary || !dataForSummary.length) {
+            setApiError("Missing prompt, summary, or data for analysis.");
             return;
         }
 
@@ -856,6 +925,11 @@ export function useDataInsights() {
         // Token usage data
         geminiTokenUsage,
         openaiTokenUsage,
-        anthropicTokenUsage
+        anthropicTokenUsage,
+
+        // Anthropic side-by-side
+        anthropicInsights,
+        loadingAnthropicInsights,
+        anthropicError
     };
 }

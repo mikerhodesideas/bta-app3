@@ -5,7 +5,7 @@ import { createDataInsightsPrompt, formatResponseAsMarkdown } from './prompts';
 // Use the default Gemini model from models.ts
 const GEMINI_MODEL = DEFAULT_MODELS.gemini;
 
-export async function generateInsights(options: GenerateInsightsOptions): Promise<LLMResponse> {
+export async function generateGeminiInsights(options: GenerateInsightsOptions): Promise<LLMResponse> {
     const { data } = options;
 
     // Create standard prompt with context using shared template

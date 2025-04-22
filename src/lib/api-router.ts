@@ -1,7 +1,7 @@
-import { GenerateInsightsOptions, generateInsights as generateGeminiInsights } from './gemini-api';
+import { generateGeminiInsights } from './gemini-api';
 import { generateOpenAIInsights } from './openai-api';
 import { generateAnthropicInsights } from './anthropic-api';
-import { LLMProvider, LLMResponse } from './types/models';
+import { LLMProvider, LLMResponse, GenerateInsightsOptions } from './types/models';
 
 /**
  * Routes the insight generation to the correct API provider based on user selection

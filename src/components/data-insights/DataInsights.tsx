@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, Dispatch, SetStateAction } from 'react';
-import { ChevronUp, ChevronDown, AlertTriangle, Trash2, PlusCircle, ArrowUpDown, X, Edit, Activity, BrainCircuit, MessageSquareWarning, Loader2, SearchCheck, ListFilter, Eye, Info, Split, Cpu } from 'lucide-react';
+import { ChevronUp, ChevronDown, AlertTriangle, ArrowUpDown, Activity, BrainCircuit, MessageSquareWarning, Loader2, SearchCheck, ListFilter, Eye, Info, Split, Cpu } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useDataInsights, PREVIEW_ROW_OPTIONS, DataSourceType } from './useDataInsights';
 import { ModelSelector } from './ModelSelector';
@@ -10,17 +10,16 @@ import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/comp
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 import { useSettings } from '@/lib/contexts/SettingsContext';
 import { MAX_RECOMMENDED_INSIGHT_ROWS } from '@/lib/config';
-import { DataCharts } from './DataCharts';
 import { DataVisualizationSection, DataSourceFilterSection } from './';
 import { LLMProvider, TokenUsage, calculateCost, AVAILABLE_MODELS, LLMResponse } from '@/lib/types/models';
 
@@ -215,13 +214,17 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
         openaiError,
         geminiTokenUsage,
         openaiTokenUsage,
-        anthropicTokenUsage
+        anthropicTokenUsage,
+        handleGenerateSideBySideInsights: handleGenerateSideBySideInsightsFromHook,
+        anthropicInsights,
+        loadingAnthropicInsights,
+        anthropicError
     } = useDataInsights();
 
     // Default values for missing properties
-    const anthropicInsights = null;
-    const loadingAnthropicInsights = false;
-    const anthropicError = null;
+    // const anthropicInsights = null; // Now provided by hook
+    // const loadingAnthropicInsights = false; // Now provided by hook
+    // const anthropicError = null; // Now provided by hook
 
     // Local state
     const [activeFilterId, setActiveFilterId] = useState<number | null>(null);
@@ -353,11 +356,10 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
     // Updated function to handle both single and side-by-side generation
     const handleGenerateClick = () => {
         if (showSideBySide) {
-            // Assuming handleGenerateSideBySideInsights takes the prompt and the two providers
-            handleGenerateSideBySideInsights(prompt, providersToCompare);
+            // Call the function from the hook
+            handleGenerateSideBySideInsightsFromHook(prompt, providersToCompare);
         } else {
-            // Assuming handleOutlierDecisionAndGenerateApiInsights takes the prompt
-            // The provider is likely handled internally by the hook based on `llmProvider` state
+            // Existing logic for single provider
             handleOutlierDecisionAndGenerateApiInsights(prompt);
         }
     };
@@ -403,12 +405,6 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
 
     // Available providers for selection
     const availableProviders: LLMProvider[] = ['gemini', 'openai', 'anthropic'];
-
-    // Local implementation of side by side insights generation
-    const handleGenerateSideBySideInsights = async (promptText: string, providers: [LLMProvider, LLMProvider]) => {
-        // This is a placeholder implementation
-        console.warn('Side by side insights generation not implemented', { promptText, providers });
-    };
 
     return (
         <TooltipProvider>
