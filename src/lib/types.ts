@@ -93,6 +93,11 @@ export interface AdGroupMetric {
   conv: number;
   cost: number;
   date: string;
+  cpc: number;
+  ctr: number;
+  convRate: number;
+  cpa: number;
+  roas: number;
 }
 
 // Add new interfaces for Negative Keywords

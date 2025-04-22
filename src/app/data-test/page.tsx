@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSettings } from '@/lib/contexts/SettingsContext'
 import { fetchAllTabsData } from '@/lib/sheetsData'
 import { SHEET_TABS, SheetTab } from '@/lib/config'
@@ -54,18 +54,17 @@ export default function DataTestPage() {
         setSortDirection('asc');
     }, [selectedTab]);
 
-    const getSelectedTabData = () => {
+    const getSelectedTabData = useCallback(() => {
         if (!tabData) return []
         return tabData[selectedTab] || []
-    }
+    }, [tabData, selectedTab]);
 
-    const getDataKeys = () => {
+    const getDataKeys = useCallback(() => {
         const data = getSelectedTabData()
         if (data.length === 0) return []
         return Object.keys(data[0] || {})
-    }
+    }, [getSelectedTabData]);
 
-    const selectedTabData = getSelectedTabData()
     const dataKeys = getDataKeys()
 
     const handleSort = (key: string) => {
@@ -95,7 +94,7 @@ export default function DataTestPage() {
             }
             return 0;
         });
-    }, [tabData, selectedTab, sortKey, sortDirection]);
+    }, [sortKey, sortDirection, getSelectedTabData]);
 
     return (
         <div className="container mx-auto px-4 py-12 mt-16">
