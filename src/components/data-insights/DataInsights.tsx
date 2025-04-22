@@ -22,6 +22,7 @@ import { useSettings } from '@/lib/contexts/SettingsContext';
 import { MAX_RECOMMENDED_INSIGHT_ROWS } from '@/lib/config';
 import { DataCharts } from './DataCharts';
 import { DataVisualizationSection, DataSourceFilterSection } from './';
+import { TokenUsage, calculateCost } from '@/lib/types/models';
 
 // Helper to format metric values based on name and potential type, enforcing specific decimal rules
 const formatMetricValue = (name: string, value: string | number | Date | undefined, currency: string): string => {
@@ -163,7 +164,8 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
         openaiError,
         handleGenerateSideBySideInsights,
         geminiTokenUsage,
-        openaiTokenUsage
+        openaiTokenUsage,
+        anthropicTokenUsage
     } = useDataInsights();
 
     // Local state
@@ -183,6 +185,11 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
     const groupingDimensionName = groupingDimension?.name;
     // Group by specific dimension value (for time series)
     const [groupByValue, setGroupByValue] = useState<string>('all');
+
+    // Calculate cost for each provider
+    const geminiCost = geminiTokenUsage ? calculateCost(geminiTokenUsage, modelNames.gemini) : undefined;
+    const openaiCost = openaiTokenUsage ? calculateCost(openaiTokenUsage, modelNames.openai) : undefined;
+    const anthropicCost = anthropicTokenUsage ? calculateCost(anthropicTokenUsage, modelNames.anthropic) : undefined;
 
     // Set default chart values when data or columns change
     useEffect(() => {
@@ -733,7 +740,9 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 )}
                                                 Sending {rowsToSend} rows for analysis (Recommended max: {MAX_RECOMMENDED_INSIGHT_ROWS}).
                                                 {!showSideBySide && (
-                                                    <span className="ml-1">Using {llmProvider === 'gemini' ? 'Gemini AI' : 'OpenAI'} for analysis.</span>
+                                                    <span className="ml-1">
+                                                        Using {llmProvider === 'gemini' ? 'Gemini AI' : llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'} for analysis.
+                                                    </span>
                                                 )}
                                             </p>
                                         );
@@ -779,9 +788,9 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                 <div className="p-4 bg-green-50 border border-green-200 rounded-lg shadow-sm">
                                     <div className="flex items-center justify-between mb-2">
                                         <h3 className="text-lg font-semibold text-green-800">
-                                            Generated AI Insights ({llmProvider === 'gemini' ? 'Gemini' : 'OpenAI'})
+                                            Generated AI Insights ({llmProvider === 'gemini' ? 'Gemini' : llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'})
                                             <Badge variant="outline" className="ml-2 bg-green-100 text-green-800 hover:bg-green-100">
-                                                {llmProvider === 'gemini' ? modelNames.gemini : modelNames.openai}
+                                                {llmProvider === 'gemini' ? modelNames.gemini : llmProvider === 'openai' ? modelNames.openai : modelNames.anthropic}
                                             </Badge>
                                         </h3>
                                         {llmProvider === 'gemini' && geminiTokenUsage && (
@@ -789,6 +798,9 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 <Cpu className="h-3 w-3 mr-1" />
                                                 <span>{geminiTokenUsage.inputTokens + geminiTokenUsage.outputTokens} tokens</span>
                                                 <span className="ml-1 text-green-500">({geminiTokenUsage.inputTokens} in / {geminiTokenUsage.outputTokens} out)</span>
+                                                {geminiCost !== undefined && (
+                                                    <span className="ml-2 text-green-600">${geminiCost.toFixed(4)}</span>
+                                                )}
                                             </div>
                                         )}
                                         {llmProvider === 'openai' && openaiTokenUsage && (
@@ -796,6 +808,19 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 <Cpu className="h-3 w-3 mr-1" />
                                                 <span>{openaiTokenUsage.inputTokens + openaiTokenUsage.outputTokens} tokens</span>
                                                 <span className="ml-1 text-green-500">({openaiTokenUsage.inputTokens} in / {openaiTokenUsage.outputTokens} out)</span>
+                                                {openaiCost !== undefined && (
+                                                    <span className="ml-2 text-green-600">${openaiCost.toFixed(4)}</span>
+                                                )}
+                                            </div>
+                                        )}
+                                        {llmProvider === 'anthropic' && anthropicTokenUsage && (
+                                            <div className="flex items-center text-xs text-green-600">
+                                                <Cpu className="h-3 w-3 mr-1" />
+                                                <span>{anthropicTokenUsage.inputTokens + anthropicTokenUsage.outputTokens} tokens</span>
+                                                <span className="ml-1 text-green-500">({anthropicTokenUsage.inputTokens} in / {anthropicTokenUsage.outputTokens} out)</span>
+                                                {anthropicCost !== undefined && (
+                                                    <span className="ml-2 text-green-600">${anthropicCost.toFixed(4)}</span>
+                                                )}
                                             </div>
                                         )}
                                     </div>

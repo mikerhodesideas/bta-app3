@@ -52,7 +52,7 @@ export interface GenerateInsightsOptions {
 export const AVAILABLE_MODELS: ModelDefinition[] = [
     {
         id: 'gemini-2.0-flash',
-        displayName: 'Gemini 2.5 Flash',
+        displayName: 'Gemini 2.0 Flash',
         provider: 'gemini',
         costs: {
             inputCost: 0.15,
@@ -87,15 +87,6 @@ export const AVAILABLE_MODELS: ModelDefinition[] = [
         }
     },
     {
-        id: 'o3-mini',
-        displayName: 'o3-mini',
-        provider: 'openai',
-        costs: {
-            inputCost: 1.10,
-            outputCost: 4.40
-        }
-    },
-    {
         id: 'gpt-4-1106-preview',
         displayName: 'GPT-4.1',
         provider: 'openai',
@@ -104,9 +95,10 @@ export const AVAILABLE_MODELS: ModelDefinition[] = [
             outputCost: 8.00
         }
     },
+
     {
-        id: 'claude-3-7-sonnet',
-        displayName: 'Claude 3.7 Sonnet',
+        id: 'claude-3-7-sonnet-latest',
+        displayName: 'Claude 3.7 Sonnet (latest)',
         provider: 'anthropic',
         costs: {
             inputCost: 3.00,
@@ -114,12 +106,12 @@ export const AVAILABLE_MODELS: ModelDefinition[] = [
         }
     },
     {
-        id: 'claude-3-opus',
-        displayName: 'o3',
+        id: 'claude-3-5-haiku-latest',
+        displayName: 'Claude 3.5 Haiku (latest)',
         provider: 'anthropic',
         costs: {
-            inputCost: 10.00,
-            outputCost: 40.00
+            inputCost: 0.80,
+            outputCost: 4.00
         }
     }
 ];
@@ -129,7 +121,7 @@ export const DEFAULT_PROVIDER: LLMProvider = 'gemini';
 export const DEFAULT_MODELS = {
     gemini: 'gemini-2.0-flash',
     openai: 'o4-mini-2025-04-16',
-    anthropic: 'claude-3-7-sonnet'
+    anthropic: 'claude-3-5-haiku-latest'
 };
 
 // Helper function to get model by ID

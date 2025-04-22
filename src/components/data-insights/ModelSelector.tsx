@@ -38,8 +38,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     <SelectValue placeholder="Select model" />
                 </SelectTrigger>
                 <SelectContent>
-                    <SelectItem value="gemini">Gemini AI</SelectItem>
+                    <SelectItem value="gemini">Gemini</SelectItem>
                     <SelectItem value="openai">OpenAI</SelectItem>
+                    <SelectItem value="anthropic">Anthropic</SelectItem>
                 </SelectContent>
             </Select>
         </div>

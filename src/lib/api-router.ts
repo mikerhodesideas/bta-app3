@@ -1,5 +1,6 @@
-import { GenerateInsightsOptions, generateInsights } from './gemini-api';
+import { GenerateInsightsOptions, generateInsights as generateGeminiInsights } from './gemini-api';
 import { generateOpenAIInsights } from './openai-api';
+import { generateAnthropicInsights } from './anthropic-api';
 import { LLMProvider, LLMResponse } from './types/models';
 
 /**
@@ -15,8 +16,10 @@ export async function generateInsightsWithProvider(
     switch (provider) {
         case 'openai':
             return generateOpenAIInsights(options);
+        case 'anthropic':
+            return generateAnthropicInsights(options);
         case 'gemini':
         default:
-            return generateInsights(options);
+            return generateGeminiInsights(options);
     }
 } 

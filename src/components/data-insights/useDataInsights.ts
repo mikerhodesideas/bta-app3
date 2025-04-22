@@ -189,6 +189,7 @@ export function useDataInsights() {
     // Add state for token usage
     const [geminiTokenUsage, setGeminiTokenUsage] = useState<TokenUsage | null>(null);
     const [openaiTokenUsage, setOpenaiTokenUsage] = useState<TokenUsage | null>(null);
+    const [anthropicTokenUsage, setAnthropicTokenUsage] = useState<TokenUsage | null>(null);
 
     const resetState = useCallback((resetFiltersAndColumns = true) => {
         if (resetFiltersAndColumns) {
@@ -204,6 +205,7 @@ export function useDataInsights() {
         setOpenaiInsights(null);
         setGeminiError(null);
         setOpenaiError(null);
+        setAnthropicTokenUsage(null);
         // Reset time series flag on source change
         setIsTimeSeries(false);
     }, []);
@@ -669,8 +671,10 @@ export function useDataInsights() {
         // Reset token usage when starting a new generation
         if (llmProvider === 'gemini') {
             setGeminiTokenUsage(null);
-        } else {
+        } else if (llmProvider === 'openai') {
             setOpenaiTokenUsage(null);
+        } else if (llmProvider === 'anthropic') {
+            setAnthropicTokenUsage(null);
         }
 
         let dataForApi = filteredAndSortedData;
@@ -718,8 +722,10 @@ export function useDataInsights() {
             // Save token usage based on provider
             if (llmProvider === 'gemini') {
                 setGeminiTokenUsage(response.usage);
-            } else {
+            } else if (llmProvider === 'openai') {
                 setOpenaiTokenUsage(response.usage);
+            } else if (llmProvider === 'anthropic') {
+                setAnthropicTokenUsage(response.usage);
             }
 
         } catch (error) {
@@ -856,6 +862,7 @@ export function useDataInsights() {
 
         // Token usage data
         geminiTokenUsage,
-        openaiTokenUsage
+        openaiTokenUsage,
+        anthropicTokenUsage
     };
 }

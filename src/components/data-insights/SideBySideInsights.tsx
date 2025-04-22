@@ -2,7 +2,7 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Separator } from "@/components/ui/separator";
 import { BrainCircuit, Cpu } from 'lucide-react';
-import { TokenUsage } from '@/lib/types/models';
+import { TokenUsage, calculateCost } from '@/lib/types/models';
 import { Badge } from "@/components/ui/badge";
 
 interface SideBySideInsightsProps {
@@ -27,6 +27,10 @@ export const SideBySideInsights: React.FC<SideBySideInsightsProps> = ({
     openaiTokenUsage,
     modelNames
 }) => {
+    // Calculate monetary cost from token usage
+    const geminiCost = geminiTokenUsage ? calculateCost(geminiTokenUsage, modelNames.gemini) : undefined;
+    const openaiCost = openaiTokenUsage ? calculateCost(openaiTokenUsage, modelNames.openai) : undefined;
+
     return (
         <div className="flex flex-col w-full space-y-4">
             <div className="flex items-center">
@@ -49,6 +53,9 @@ export const SideBySideInsights: React.FC<SideBySideInsightsProps> = ({
                                 <Cpu className="h-3 w-3 mr-1" />
                                 <span>{geminiTokenUsage.inputTokens + geminiTokenUsage.outputTokens} tokens</span>
                                 <span className="ml-1 text-blue-400">({geminiTokenUsage.inputTokens} in / {geminiTokenUsage.outputTokens} out)</span>
+                                {geminiCost !== undefined && (
+                                    <span className="ml-2 text-blue-600">${geminiCost.toFixed(4)}</span>
+                                )}
                             </div>
                         )}
                     </div>
@@ -90,6 +97,9 @@ export const SideBySideInsights: React.FC<SideBySideInsightsProps> = ({
                                 <Cpu className="h-3 w-3 mr-1" />
                                 <span>{openaiTokenUsage.inputTokens + openaiTokenUsage.outputTokens} tokens</span>
                                 <span className="ml-1 text-green-400">({openaiTokenUsage.inputTokens} in / {openaiTokenUsage.outputTokens} out)</span>
+                                {openaiCost !== undefined && (
+                                    <span className="ml-2 text-green-600">${openaiCost.toFixed(4)}</span>
+                                )}
                             </div>
                         )}
                     </div>
