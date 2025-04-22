@@ -1,8 +1,8 @@
 // src/lib/sheetsData.ts
-import { AdMetric, Campaign, SearchTermMetric, TabData, AdGroupMetric, isSearchTermMetric } from './types'
-import { SHEET_TABS, SheetTab, DEFAULT_SHEET_URL } from './config'
+import { AdMetric, Campaign, SearchTermMetric, TabData, AdGroupMetric, NegativeKeywordList, CampaignNegative, AdGroupNegative, CampaignStatus, SharedListKeyword, isSearchTermMetric } from './types'
+import { SHEET_TABS, SheetTab, TAB_CONFIGS, DEFAULT_SHEET_URL } from './config'
 
-async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[] | SearchTermMetric[] | AdGroupMetric[]> {
+async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[] | SearchTermMetric[] | AdGroupMetric[] | NegativeKeywordList[] | CampaignNegative[] | AdGroupNegative[] | CampaignStatus[] | SharedListKeyword[]> {
   // console.log(`[sheetsData] Starting fetch for tab: ${tab}`); // Removed
   try {
     const urlWithTab = `${sheetUrl}?tab=${tab}`
@@ -35,7 +35,7 @@ async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[]
     }
 
     // Parse data based on tab type
-    if (tab === 'SearchTerms') {
+    if (tab === 'searchTerms') {
       return rawData.map((row: any): SearchTermMetric => ({
         searchTerm: String(row['searchTerm'] || ''),
         campaign: String(row['campaign'] || ''),
@@ -51,7 +51,7 @@ async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[]
         cpa: Number(row['cpa'] || 0),
         roas: Number(row['roas'] || 0)
       }))
-    } else if (tab === 'AdGroups') {
+    } else if (tab === 'adGroups') {
       // Map the ad groups data, including calculated metrics
       return rawData.map((row: any): AdGroupMetric => ({
         campaign: String(row['campaign'] || ''),
@@ -70,6 +70,56 @@ async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[]
         cpa: Number(row['cpa'] || 0),
         roas: Number(row['roas'] || 0)
       }))
+    } else if (tab === 'negativeKeywordLists') {
+      // Map the negative keyword lists data
+      return rawData.map((row: any): NegativeKeywordList => ({
+        listName: String(row['listName'] || ''),
+        listId: String(row['listId'] || ''),
+        listType: String(row['listType'] || ''),
+        appliedToCampaignName: String(row['appliedToCampaignName'] || ''),
+        appliedToCampaignId: String(row['appliedToCampaignId'] || '')
+      }))
+    } else if (tab === 'campaignNegatives') {
+      // Map the campaign negatives data
+      return rawData.map((row: any): CampaignNegative => ({
+        campaignName: String(row['campaignName'] || ''),
+        campaignId: String(row['campaignId'] || ''),
+        criterionId: String(row['criterionId'] || ''),
+        keywordText: String(row['keywordText'] || ''),
+        matchType: String(row['matchType'] || '')
+      }))
+    } else if (tab === 'adGroupNegatives') {
+      // Map the ad group negatives data
+      return rawData.map((row: any): AdGroupNegative => ({
+        campaignName: String(row['campaignName'] || ''),
+        campaignId: String(row['campaignId'] || ''),
+        adGroupName: String(row['adGroupName'] || ''),
+        adGroupId: String(row['adGroupId'] || ''),
+        criterionId: String(row['criterionId'] || ''),
+        keywordText: String(row['keywordText'] || ''),
+        matchType: String(row['matchType'] || '')
+      }))
+    }
+
+    // Handle Campaign Status data
+    if (tab === 'campaignStatus') {
+      return rawData.map((row: any): CampaignStatus => ({
+        campaignId: String(row['campaignId'] || ''),
+        campaignName: String(row['campaignName'] || ''),
+        status: String(row['status'] || ''),
+        channelType: String(row['channelType'] || '')
+      }));
+    }
+
+    // Handle Shared List Keyword data
+    if (tab === 'sharedListKeywords') {
+      return rawData.map((row: any): SharedListKeyword => ({
+        listId: String(row['listId'] || ''),
+        criterionId: String(row['criterionId'] || ''),
+        keywordText: String(row['keywordText'] || ''),
+        matchType: String(row['matchType'] || ''),
+        type: String(row['type'] || '')
+      }));
     }
 
     // Daily metrics (tab === 'Daily')
@@ -112,15 +162,25 @@ export async function fetchAllTabsData(sheetUrl: string = DEFAULT_SHEET_URL): Pr
   // console.log(`[sheetsData] Fetching complete. Assembling final data structure.`); // Removed
   return results.reduce((acc, { tab, data }) => {
     // console.log(`[sheetsData] Assigning data for tab: ${tab}`); // Removed
-    if (tab === 'SearchTerms') {
+    if (tab === 'searchTerms') {
       acc[tab] = data as SearchTermMetric[]
-    } else if (tab === 'AdGroups') {
-      acc[tab] = data as AdGroupMetric[];
+    } else if (tab === 'adGroups') {
+      acc[tab] = data as AdGroupMetric[]
+    } else if (tab === 'negativeKeywordLists') {
+      acc[tab] = data as NegativeKeywordList[]
+    } else if (tab === 'campaignNegatives') {
+      acc[tab] = data as CampaignNegative[]
+    } else if (tab === 'adGroupNegatives') {
+      acc[tab] = data as AdGroupNegative[]
+    } else if (tab === 'campaignStatus') {
+      acc[tab] = data as CampaignStatus[]
+    } else if (tab === 'sharedListKeywords') {
+      acc[tab] = data as SharedListKeyword[]
     } else {
       acc[tab] = data as AdMetric[] // Default to AdMetric for 'Daily'
     }
     return acc
-  }, { Daily: [], SearchTerms: [], AdGroups: [] } as TabData)
+  }, { daily: [], searchTerms: [], adGroups: [], negativeKeywordLists: [], campaignNegatives: [], adGroupNegatives: [], campaignStatus: [], sharedListKeywords: [] } as TabData)
 }
 
 export function getCampaigns(data: AdMetric[]): Campaign[] {

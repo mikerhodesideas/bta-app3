@@ -93,11 +93,62 @@ export interface AdGroupMetric {
   conv: number;
   cost: number;
   date: string;
-  cpc: number;
-  ctr: number;
-  convRate: number;
-  cpa: number;
-  roas: number;
+}
+
+// Add new interfaces for Negative Keywords
+export interface NegativeKeywordList {
+  listName: string;
+  listId: string;
+  listType: string;
+  appliedToCampaignName: string;
+  appliedToCampaignId: string;
+}
+
+export interface CampaignNegative {
+  campaignName: string;
+  campaignId: string;
+  criterionId: string;
+  keywordText: string;
+  matchType: string;
+}
+
+export interface AdGroupNegative {
+  campaignName: string;
+  campaignId: string;
+  adGroupName: string;
+  adGroupId: string;
+  criterionId: string;
+  keywordText: string;
+  matchType: string;
+}
+
+// Add new interface for Campaign Status
+export interface CampaignStatus {
+  campaignId: string;
+  campaignName: string;
+  status: string; // e.g., ENABLED, PAUSED, REMOVED
+  channelType: string; // e.g., SEARCH, DISPLAY, SHOPPING
+}
+
+// Add new interface for keywords within Shared Lists
+export interface SharedListKeyword {
+  listId: string;
+  criterionId: string;
+  keywordText: string;
+  matchType: string;
+  type: string; // Should be KEYWORD
+}
+
+// Update the TabData type to include the new properties
+export type TabData = {
+  daily: AdMetric[];
+  searchTerms: SearchTermMetric[];
+  adGroups: AdGroupMetric[];
+  negativeKeywordLists: NegativeKeywordList[];
+  campaignNegatives: CampaignNegative[];
+  adGroupNegatives: AdGroupNegative[];
+  campaignStatus: CampaignStatus[];
+  sharedListKeywords: SharedListKeyword[];
 }
 
 // Type guard for search term data
@@ -115,11 +166,27 @@ export function isAdGroupMetric(data: any): data is AdGroupMetric {
   return 'adGroup' in data && 'adGroupId' in data;
 }
 
-// Combined tab data type
-export type TabData = {
-  Daily: AdMetric[]
-  SearchTerms: SearchTermMetric[]
-  AdGroups: AdGroupMetric[]
+// Add type guards for Negative Keywords
+export function isNegativeKeywordList(data: any): data is NegativeKeywordList {
+  return 'listName' in data && 'listId' in data && 'appliedToCampaignId' in data;
+}
+
+export function isCampaignNegative(data: any): data is CampaignNegative {
+  return 'campaignName' in data && 'criterionId' in data && 'keywordText' in data && !('adGroupName' in data);
+}
+
+export function isAdGroupNegative(data: any): data is AdGroupNegative {
+  return 'adGroupName' in data && 'adGroupId' in data && 'criterionId' in data && 'keywordText' in data;
+}
+
+// Add type guard for Campaign Status
+export function isCampaignStatus(data: any): data is CampaignStatus {
+  return 'campaignId' in data && 'campaignName' in data && 'status' in data;
+}
+
+// Add type guard for Shared List Keywords
+export function isSharedListKeyword(data: any): data is SharedListKeyword {
+  return 'listId' in data && 'criterionId' in data && 'keywordText' in data;
 }
 
 // Helper type to get numeric values from metrics

@@ -20,6 +20,15 @@ export function Navigation() {
                             </span>
                         </Link>
                         <Link
+                            href="/negative-keywords"
+                            className={cn(
+                                "text-sm font-medium transition-colors hover:text-foreground/80",
+                                pathname === "/negative-keywords" ? "text-foreground" : "text-foreground/60"
+                            )}
+                        >
+                            Negative Keywords
+                        </Link>
+                        <Link
                             href="/terms"
                             className={cn(
                                 "text-sm font-medium transition-colors hover:text-foreground/80",
