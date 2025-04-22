@@ -8,7 +8,7 @@ export const COLORS = {
 
 export const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwZIy8HCnFRb4GrXCg-UG6nFsjl4kL08kuiNg4Rr4vAxHRINuMe03dXzeM_N1ClRCpUCw/exec'
 
-export const SHEET_TABS = ['daily', 'searchTerms', 'adGroups', 'negativeKeywordLists', 'campaignNegatives', 'adGroupNegatives', 'campaignStatus', 'sharedListKeywords'] as const
+export const SHEET_TABS = ['daily', 'searchTerms', 'adGroups', 'negativeKeywordLists', 'campaignNegatives', 'adGroupNegatives', 'campaignStatus', 'sharedListKeywords', 'landingPages'] as const
 
 export type SheetTab = typeof SHEET_TABS[number]
 
@@ -47,5 +47,19 @@ export const TAB_CONFIGS: Record<SheetTab, TabConfig> = {
     sharedListKeywords: {
         name: 'sharedListKeywords',
         metrics: {} // No specific metrics needed for display yet
+    },
+    landingPages: {
+        name: 'landingPages',
+        metrics: {
+            impressions: { label: 'Impr', format: (val: number) => val.toLocaleString() },
+            clicks: { label: 'Clicks', format: (val: number) => val.toLocaleString() },
+            cost: { label: 'Cost', format: (val: number) => `$${val.toFixed(2)}` },
+            conversions: { label: 'Conv', format: (val: number) => val.toFixed(1) },
+            value: { label: 'Value', format: (val: number) => `$${val.toFixed(2)}` },
+            ctr: { label: 'CTR', format: (val: number) => `${(val * 100).toFixed(2)}%` },
+            cvr: { label: 'CVR', format: (val: number) => `${(val * 100).toFixed(2)}%` },
+            cpa: { label: 'CPA', format: (val: number) => `$${val.toFixed(2)}` },
+            roas: { label: 'ROAS', format: (val: number) => `${(val * 100).toFixed(0)}%` }
+        }
     }
 };

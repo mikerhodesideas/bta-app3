@@ -144,6 +144,20 @@ export interface SharedListKeyword {
   type: string; // Should be KEYWORD
 }
 
+// Add the new LandingPageMetric interface
+export interface LandingPageMetric {
+  url: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  value: number;
+  ctr: number;
+  cvr: number;
+  cpa: number;
+  roas: number;
+}
+
 // Update the TabData type to include the new properties
 export type TabData = {
   daily: AdMetric[];
@@ -154,6 +168,7 @@ export type TabData = {
   adGroupNegatives: AdGroupNegative[];
   campaignStatus: CampaignStatus[];
   sharedListKeywords: SharedListKeyword[];
+  landingPages: LandingPageMetric[];
 }
 
 // Type guard for search term data
@@ -192,6 +207,11 @@ export function isCampaignStatus(data: any): data is CampaignStatus {
 // Add type guard for Shared List Keywords
 export function isSharedListKeyword(data: any): data is SharedListKeyword {
   return 'listId' in data && 'criterionId' in data && 'keywordText' in data;
+}
+
+// Add a type guard for LandingPageMetric
+export function isLandingPageMetric(data: any): data is LandingPageMetric {
+  return 'url' in data && 'ctr' in data && 'cvr' in data;
 }
 
 // Helper type to get numeric values from metrics
