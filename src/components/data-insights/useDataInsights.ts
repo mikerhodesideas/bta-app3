@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSettings } from '@/lib/contexts/SettingsContext';
 import { useDataStore } from '@/store/dataStore';
-import { SHEET_TABS, SheetTab, MAX_RECOMMENDED_INSIGHT_ROWS, GEMINI_MODEL } from '@/lib/config';
+import { SHEET_TABS, SheetTab, MAX_RECOMMENDED_INSIGHT_ROWS } from '@/lib/config';
+import { generateInsightsWithProvider } from '@/lib/api-router';
+import { LLMProvider, DEFAULT_PROVIDER, TokenUsage } from '@/lib/types/models';
+import { DEFAULT_MODELS } from '@/lib/types/models';
 import {
     DataSourceType,
     ColumnType,
@@ -14,9 +17,7 @@ import {
 import {
     AdMetric,
     AdGroupMetric,
-    SearchTermMetric,
-    isAdGroupMetric,
-    isSearchTermMetric,
+    SearchTermMetric
 } from '@/lib/types';
 
 // Fix EnhancedOutlierType to include the 'row' property from base OutlierType
@@ -173,6 +174,21 @@ export function useDataInsights() {
     const [apiError, setApiError] = useState<string | null>(null);
     const [rowCountWarning, setRowCountWarning] = useState<string | null>(null);
     const [isTimeSeries, setIsTimeSeries] = useState(false);
+    // LLM provider state
+    const [llmProvider, setLlmProvider] = useState<LLMProvider>(DEFAULT_PROVIDER);
+
+    // Side by side state
+    const [showSideBySide, setShowSideBySide] = useState<boolean>(false);
+    const [geminiInsights, setGeminiInsights] = useState<string | null>(null);
+    const [openaiInsights, setOpenaiInsights] = useState<string | null>(null);
+    const [loadingGeminiInsights, setLoadingGeminiInsights] = useState<boolean>(false);
+    const [loadingOpenaiInsights, setLoadingOpenaiInsights] = useState<boolean>(false);
+    const [geminiError, setGeminiError] = useState<string | null>(null);
+    const [openaiError, setOpenaiError] = useState<string | null>(null);
+
+    // Add state for token usage
+    const [geminiTokenUsage, setGeminiTokenUsage] = useState<TokenUsage | null>(null);
+    const [openaiTokenUsage, setOpenaiTokenUsage] = useState<TokenUsage | null>(null);
 
     const resetState = useCallback((resetFiltersAndColumns = true) => {
         if (resetFiltersAndColumns) {
@@ -183,28 +199,43 @@ export function useDataInsights() {
         setDetectedOutliers(null);
         setExcludeOutliers(true);
         setApiError(null);
-        // Reset rowCountWarning here as it should persist
+        // Reset side by side state
+        setGeminiInsights(null);
+        setOpenaiInsights(null);
+        setGeminiError(null);
+        setOpenaiError(null);
         // Reset time series flag on source change
         setIsTimeSeries(false);
     }, []);
 
-    // Effect to set default source AFTER initial data load
+    // Effect to set default source AFTER initial data load AND data is actually available
     useEffect(() => {
         // Check if loading is finished and no source is selected yet
         if (!globalLoading && !selectedSource) {
-            const defaultSource = dataSources.find(src => src.id === 'SearchTerms');
-            if (defaultSource) {
-                setSelectedSource(defaultSource);
-                console.log("[Insights] Initial data loaded, setting default source to SearchTerms.");
+            // Check if we actually have data in the store
+            const searchTermsData = getDataForTab('SearchTerms');
+
+            if (searchTermsData && searchTermsData.length > 0) {
+                const defaultSource = dataSources.find(src => src.id === 'SearchTerms');
+                if (defaultSource) {
+                    console.log("[Insights] Data verified, setting default source to SearchTerms with", searchTermsData.length, "rows");
+                    setSelectedSource(defaultSource);
+                }
+            } else {
+                console.log("[Insights] SearchTerms data not available yet, will try again when data is ready");
             }
         }
-    }, [globalLoading, selectedSource, dataSources]); // Dependencies
+    }, [globalLoading, selectedSource, dataSources, getDataForTab]); // Added getDataForTab as dependency
 
     // --- Derived State from Store ---
     const rawDataForSelectedTab = useMemo(() => {
         // Cache the result of getDataForTab to avoid infinite loop
         if (!selectedSource) return [];
         const cachedData = getDataForTab(selectedSource.id as SheetTab);
+
+        // Add debug logging
+        console.log(`[Insights] Retrieved ${cachedData.length} rows for ${selectedSource.id}`);
+
         return [...cachedData]; // Return a new copy to avoid reference issues
     }, [selectedSource, getDataForTab]);
 
@@ -540,11 +571,107 @@ export function useDataInsights() {
 
     }, [dataForSummary, columns, calculateSummary]);  // Keep all dependencies
 
-    // --- API Insights Generation (uses filteredAndSortedData, respects excludeOutliers) ---
+    // --- Side by Side Insights Generation ---
+    const handleGenerateSideBySideInsights = useCallback(async (prompt: string) => {
+        setGeminiInsights(null);
+        setOpenaiInsights(null);
+        setGeminiError(null);
+        setOpenaiError(null);
+        setLoadingGeminiInsights(true);
+        setLoadingOpenaiInsights(true);
+
+        // Reset token usage
+        setGeminiTokenUsage(null);
+        setOpenaiTokenUsage(null);
+
+        let dataForApi = filteredAndSortedData;
+        let outlierInfoForPrompt = isTimeSeries
+            ? "Time series data detected; outliers were not checked or excluded."
+            : (excludeOutliers && detectedOutliers && detectedOutliers.length > 0
+                ? `${detectedOutliers.length} potential outliers were excluded based on standard deviation analysis.`
+                : "Outliers were included.");
+
+        if (excludeOutliers && detectedOutliers && detectedOutliers.length > 0) {
+            const outlierRowIndices = new Set(detectedOutliers.map(o => o.rowIndex));
+            dataForApi = filteredAndSortedData.filter((_, index) => !outlierRowIndices.has(index));
+            outlierInfoForPrompt = `${detectedOutliers.length} potential outliers were excluded based on standard deviation analysis.`;
+        }
+
+        if (dataForApi.length === 0) {
+            const noDataError = 'No data available to send for AI analysis after filtering (and potentially outlier removal).';
+            setGeminiError(noDataError);
+            setOpenaiError(noDataError);
+            setLoadingGeminiInsights(false);
+            setLoadingOpenaiInsights(false);
+            return;
+        }
+
+        // Prepare the source info
+        const sourceInfo = {
+            name: selectedSource?.name || 'Selected Data',
+            filters: filters.length > 0 ? filters.map(f => `${f.field} ${f.operator} ${f.value}`).join(', ') : 'None',
+            totalRows: filteredAndSortedData.length,
+            rowsAnalyzed: dataForApi.length,
+            outlierInfo: outlierInfoForPrompt
+        };
+
+        // Generate insights with both providers in parallel
+        const apiOptions = { data: dataForApi, sourceInfo, prompt };
+
+        // Start both API calls in parallel
+        const geminiPromise = generateInsightsWithProvider(apiOptions, 'gemini')
+            .then(result => {
+                setGeminiInsights(result.content);
+                setGeminiTokenUsage(result.usage);
+                return result;
+            })
+            .catch(error => {
+                console.error('[Insights] Error during Gemini insights generation:', error);
+                setGeminiError(error instanceof Error ? error.message : 'An unknown error occurred during the Gemini API call');
+                return null;
+            })
+            .finally(() => {
+                setLoadingGeminiInsights(false);
+            });
+
+        const openaiPromise = generateInsightsWithProvider(apiOptions, 'openai')
+            .then(result => {
+                setOpenaiInsights(result.content);
+                setOpenaiTokenUsage(result.usage);
+                return result;
+            })
+            .catch(error => {
+                console.error('[Insights] Error during OpenAI insights generation:', error);
+                setOpenaiError(error instanceof Error ? error.message : 'An unknown error occurred during the OpenAI API call');
+                return null;
+            })
+            .finally(() => {
+                setLoadingOpenaiInsights(false);
+            });
+
+        // Wait for both to complete (we only care that they've finished, not the actual results here)
+        await Promise.allSettled([geminiPromise, openaiPromise]);
+
+    }, [filteredAndSortedData, detectedOutliers, selectedSource, filters, excludeOutliers, isTimeSeries]);
+
+    // --- Single API Insights Generation ---
     const handleOutlierDecisionAndGenerateApiInsights = useCallback(async (prompt: string) => {
+        // If side by side is enabled, use that function instead
+        if (showSideBySide) {
+            handleGenerateSideBySideInsights(prompt);
+            return;
+        }
+
         setLoadingInsights(true);
         setApiError(null);
         setInsights(null);
+
+        // Reset token usage when starting a new generation
+        if (llmProvider === 'gemini') {
+            setGeminiTokenUsage(null);
+        } else {
+            setOpenaiTokenUsage(null);
+        }
 
         let dataForApi = filteredAndSortedData;
         let outlierInfoForPrompt = isTimeSeries
@@ -565,118 +692,44 @@ export function useDataInsights() {
             return;
         }
 
-        const fullPrompt = `Dataset: ${selectedSource?.name || 'Selected Data'}\nFilters Applied: ${filters.length > 0 ? filters.map(f => `${f.field} ${f.operator} ${f.value}`).join(', ') : 'None'}\nTotal Rows Matching Filters: ${filteredAndSortedData.length}\nRows Being Analyzed: ${dataForApi.length}\nOutlier Handling: ${outlierInfoForPrompt}\n\nUser Prompt: ${prompt}`;
-
-        console.log(`[Insights] Sending ${dataForApi.length} rows to API. Outliers excluded: ${excludeOutliers}`);
-
-        // Log API key status for debugging
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-        console.log('[Insights] API Key status:', {
-            exists: !!apiKey,
-            length: apiKey?.length || 0
-        });
-
-        if (!apiKey) {
-            const errorMsg = 'Gemini API key not found. Please check your .env.local file and ensure NEXT_PUBLIC_GEMINI_API_KEY is set.';
-            setApiError(errorMsg);
-            setLoadingInsights(false);
-            return;
-        }
-
         try {
-            // Define request body incorporating user's changes AND including the actual data
-            const requestBody = {
-                contents: [{
-                    parts: [
-                        // Part 1: The descriptive prompt context
-                        { text: fullPrompt },
-                        // Part 2: The actual data rows, formatted as JSON
-                        { text: `\n\nData:\n${JSON.stringify(dataForApi, null, 2)}` }
-                    ]
-                }],
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 2000
-                    // Assuming user intended to remove topK, topP based on their diff
-                }
-                // safetySettings removed based on user's diff
+            // Prepare the source info
+            const sourceInfo = {
+                name: selectedSource?.name || 'Selected Data',
+                filters: filters.length > 0 ? filters.map(f => `${f.field} ${f.operator} ${f.value}`).join(', ') : 'None',
+                totalRows: filteredAndSortedData.length,
+                rowsAnalyzed: dataForApi.length,
+                outlierInfo: outlierInfoForPrompt
             };
 
-            // Create a copy for logging with truncated data
-            const requestBodyForLog = JSON.parse(JSON.stringify(requestBody));
-            // Check if the data part exists and truncate it for the log
-            if (requestBodyForLog.contents?.[0]?.parts?.[1]?.text) {
-                const originalLength = requestBodyForLog.contents[0].parts[1].text.length;
-                requestBodyForLog.contents[0].parts[1].text =
-                    requestBodyForLog.contents[0].parts[1].text.substring(0, 100) +
-                    `... (truncated ${originalLength - 100} chars for log)`;
-            }
-            console.log('[Insights] Sending request (data truncated in log):', JSON.stringify(requestBodyForLog, null, 2));
-
-            // Perform the API fetch with the original, full requestBody
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
+            // Use the router to call the appropriate API
+            const response = await generateInsightsWithProvider(
+                {
+                    data: dataForApi,
+                    sourceInfo,
+                    prompt
                 },
-                body: JSON.stringify(requestBody)
-            });
+                llmProvider
+            );
 
-            // Parse the JSON response
-            const responseJson = await response.json();
+            // Set the generated insights and token usage
+            setInsights(response.content);
 
-            // --- Re-added logging --- 
-            // Log the raw parsed JSON object immediately after parsing
-            console.log('[Insights] Parsed API Response Object:', responseJson);
-            // Log the stringified version for comparison/readability in console
-            console.log('[Insights] Full API Response (Stringified for Log):', {
-                status: response.status,
-                headers: Object.fromEntries(response.headers.entries()),
-                body: JSON.stringify(responseJson, null, 2)
-            });
-            // Log prompt feedback separately if it exists, as it might be relevant
-            if (responseJson.promptFeedback) {
-                console.warn('[Insights] API Response included promptFeedback:', responseJson.promptFeedback);
-            }
-            // --- End Re-added logging --- 
-
-            // Check if the response status is OK
-            if (!response.ok) {
-                console.error('[Insights] API Error Response:', responseJson);
-                const errorMessage = responseJson.error?.message || `API request failed with status ${response.status}`;
-                throw new Error(errorMessage); // Throw error to be caught by catch block
-            }
-
-            // --- Attempt to extract and display the text from the first candidate --- 
-            const candidate = responseJson.candidates?.[0];
-            const insightText = candidate?.content?.parts?.[0]?.text;
-
-            if (insightText) {
-                // Successfully extracted text from candidate
-                setInsights(insightText);
-                setApiError(null); // Clear any previous errors
-                console.log('[Insights] API call successful. Extracted and displaying text from candidates[0].content.parts[0].text');
+            // Save token usage based on provider
+            if (llmProvider === 'gemini') {
+                setGeminiTokenUsage(response.usage);
             } else {
-                // Candidate text not found, even though response was OK.
-                // Log the issue and display the raw response as a fallback.
-                const errorMsg = 'API call successful (200 OK), but failed to extract text content from candidates[0].content.parts[0].text.';
-                console.error('[Insights]', errorMsg, 'Full Response:', responseJson);
-                // Display the raw JSON as fallback as previously agreed
-                const rawResponseText = `Error: ${errorMsg}\n\nRaw Response:\n${JSON.stringify(responseJson, null, 2)}`;
-                setInsights(rawResponseText);
-                setApiError(errorMsg); // Set an error state for clarity
+                setOpenaiTokenUsage(response.usage);
             }
 
         } catch (error) {
-            // Handle fetch errors or errors thrown from response check
-            console.error('Error during API insights generation:', error);
+            console.error('[Insights] Error during API insights generation:', error);
             setApiError(error instanceof Error ? error.message : 'An unknown error occurred during the API call');
-            setInsights(null); // Clear insights on error
+            setInsights(null);
         } finally {
-            // Ensure loading state is always turned off
             setLoadingInsights(false);
         }
-    }, [filteredAndSortedData, detectedOutliers, selectedSource, filters, excludeOutliers, isTimeSeries]); // Add isTimeSeries
+    }, [filteredAndSortedData, detectedOutliers, selectedSource, filters, excludeOutliers, isTimeSeries, llmProvider, showSideBySide, handleGenerateSideBySideInsights]);
 
     // Filter/Sort management functions (remain the same)
     const addFilter = useCallback(() => {
@@ -783,6 +836,26 @@ export function useDataInsights() {
         getFilterOperatorsForType,
         previewRowCount,
         setPreviewRowCount,
-        isTimeSeries // Expose the time series flag
+        isTimeSeries,
+        // LLM provider state
+        llmProvider,
+        setLlmProvider,
+        // Add model names
+        modelNames: DEFAULT_MODELS,
+
+        // Side by side state
+        showSideBySide,
+        setShowSideBySide,
+        geminiInsights,
+        openaiInsights,
+        loadingGeminiInsights,
+        loadingOpenaiInsights,
+        geminiError,
+        openaiError,
+        handleGenerateSideBySideInsights,
+
+        // Token usage data
+        geminiTokenUsage,
+        openaiTokenUsage
     };
 }

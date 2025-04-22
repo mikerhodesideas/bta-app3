@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronUp, ChevronDown, AlertTriangle, Trash2, PlusCircle, ArrowUpDown, X, Edit, Activity, BrainCircuit, MessageSquareWarning, Loader2, SearchCheck, ListFilter, Eye, Info } from 'lucide-react';
+import { ChevronUp, ChevronDown, AlertTriangle, Trash2, PlusCircle, ArrowUpDown, X, Edit, Activity, BrainCircuit, MessageSquareWarning, Loader2, SearchCheck, ListFilter, Eye, Info, Split, Cpu } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useDataInsights, PREVIEW_ROW_OPTIONS } from './useDataInsights';
-import type { ColumnType, FilterOperatorType, DataRowType } from './types';
+import { ModelSelector } from './ModelSelector';
+import { SideBySideInsights } from './SideBySideInsights';
+import type { ColumnType, FilterOperatorType, DataRowType, ChartDataType } from './types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils';
 import { useSettings } from '@/lib/contexts/SettingsContext';
 import { MAX_RECOMMENDED_INSIGHT_ROWS } from '@/lib/config';
+import { DataCharts } from './DataCharts';
+import { DataVisualizationSection, DataSourceFilterSection } from './';
 
 // Helper to format metric values based on name and potential type, enforcing specific decimal rules
 const formatMetricValue = (name: string, value: string | number | Date | undefined, currency: string): string => {
@@ -115,7 +119,8 @@ const RangeIndicator = ({ min, avg, max }: { min?: number, avg?: number, max?: n
     );
 };
 
-export const DataInsights: React.FC = () => {
+export interface DataInsightsProps { showVisualization?: boolean }
+export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = true }) => {
     const { settings } = useSettings();
     const {
         dataSources,
@@ -145,6 +150,20 @@ export const DataInsights: React.FC = () => {
         previewRowCount,
         setPreviewRowCount,
         isTimeSeries,
+        llmProvider,
+        setLlmProvider,
+        modelNames,
+        showSideBySide,
+        setShowSideBySide,
+        geminiInsights,
+        openaiInsights,
+        loadingGeminiInsights,
+        loadingOpenaiInsights,
+        geminiError,
+        openaiError,
+        handleGenerateSideBySideInsights,
+        geminiTokenUsage,
+        openaiTokenUsage
     } = useDataInsights();
 
     // Local state
@@ -153,6 +172,98 @@ export const DataInsights: React.FC = () => {
         "Analyze this filtered dataset focusing on performance trends, anomalies, and actionable recommendations for optimization."
     );
     const [selectedOutlierRow, setSelectedOutlierRow] = useState<any | null>(null);
+
+    // Chart state
+    const [chartType, setChartType] = useState<'line' | 'bar' | null>('bar');
+    const [selectedMetric, setSelectedMetric] = useState<string>('');
+    const [selectedDimension, setSelectedDimension] = useState<string>('');
+    const [selectedSecondaryMetric, setSelectedSecondaryMetric] = useState<string>('');
+    // Auto-detected primary grouping dimension (first non-date dimension)
+    const groupingDimension = useMemo(() => columns.find(c => c.type === 'dimension'), [columns]);
+    const groupingDimensionName = groupingDimension?.name;
+    // Group by specific dimension value (for time series)
+    const [groupByValue, setGroupByValue] = useState<string>('all');
+
+    // Set default chart values when data or columns change
+    useEffect(() => {
+        if (columns.length > 0 && data.length > 0) {
+            // Find date column for time series
+            const dateColumn = columns.find(col => col.type === 'date');
+
+            // Find cost and value metrics
+            const costMetric = columns.find(col =>
+                col.type === 'metric' &&
+                (col.name.toLowerCase().includes('cost') || col.field.toLowerCase().includes('cost'))
+            );
+
+            const valueMetric = columns.find(col =>
+                col.type === 'metric' &&
+                (col.name.toLowerCase().includes('value') || col.field.toLowerCase().includes('value'))
+            );
+
+            // Find clicks metric as fallback
+            const clicksMetric = columns.find(col =>
+                col.type === 'metric' &&
+                (col.name.toLowerCase().includes('click') || col.field.toLowerCase().includes('click'))
+            );
+
+            // Find first dimension for non-time series
+            const firstDimension = columns.find(col => col.type === 'dimension');
+
+            // Set chart type based on data
+            setChartType(dateColumn ? 'line' : 'bar');
+
+            // Set dimension based on whether time series data is available
+            if (dateColumn) {
+                setSelectedDimension(dateColumn.field);
+            } else if (firstDimension) {
+                setSelectedDimension(firstDimension.field);
+            }
+
+            // Set primary metric (prefer cost, fallback to first metric)
+            if (costMetric) {
+                setSelectedMetric(costMetric.field);
+            } else if (columns.find(col => col.type === 'metric')) {
+                setSelectedMetric(columns.find(col => col.type === 'metric')?.field || '');
+            }
+
+            // Set secondary metric (prefer value if cost is primary, or clicks)
+            if (valueMetric && costMetric) {
+                setSelectedSecondaryMetric(valueMetric.field);
+            } else if (clicksMetric && costMetric) {
+                setSelectedSecondaryMetric(clicksMetric.field);
+            } else {
+                setSelectedSecondaryMetric('none');
+            }
+
+            setGroupByValue('all');
+        }
+    }, [columns, data]);
+
+    // Processed data: collapse by date, optionally filter by one dimension value
+    const processedData = useMemo(() => {
+        const dimCol = columns.find(c => c.field === selectedDimension);
+        // Only aggregate when X-axis is a date field and data exists
+        if (dimCol?.type === 'date' && groupingDimension) {
+            // filter by selected group value (or include all if 'all')
+            const rows = groupByValue === 'all'
+                ? data
+                : data.filter(r => String(r[groupingDimension.field]) === groupByValue);
+            const map = new Map<string, any>();
+            rows.forEach(row => {
+                const raw = row[selectedDimension];
+                const key = raw instanceof Date ? raw.toISOString() : String(raw);
+                const existing = map.get(key) || { [selectedDimension]: raw };
+                existing[selectedMetric] = (existing[selectedMetric] || 0) + Number(row[selectedMetric]) || 0;
+                if (selectedSecondaryMetric && selectedSecondaryMetric !== 'none') {
+                    existing[selectedSecondaryMetric] = (existing[selectedSecondaryMetric] || 0) + Number(row[selectedSecondaryMetric]) || 0;
+                }
+                map.set(key, existing);
+            });
+            return Array.from(map.values());
+        }
+        return data;
+    }, [data, columns, selectedDimension, selectedMetric, selectedSecondaryMetric, groupByValue, groupingDimension]);
 
     const addFilter = () => {
         if (filters.length >= 5) return;
@@ -182,112 +293,22 @@ export const DataInsights: React.FC = () => {
                 {/* This will now be the main title */}
                 <h2 className="text-2xl font-semibold text-gray-800">Data Insights Generator</h2>
 
-                {/* Step 1 & 2: Setup Area */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Data Source Card */}
-                    <Card className="shadow-sm border border-gray-200">
-                        <CardHeader>
-                            <CardTitle className="text-lg font-semibold text-gray-800"><ListFilter className="inline h-5 w-5 mr-2 text-blue-600" />1. Select Data Source</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <Select
-                                value={selectedSource?.id || ''}
-                                onValueChange={(value) => {
-                                    const source = dataSources.find(src => src.id === value);
-                                    setSelectedSource(source || null);
-                                    setActiveFilterId(null);
-                                }}
-                                disabled={loading}
-                            >
-                                <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select a data source" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {dataSources.map(source => (
-                                        <SelectItem key={source.id} value={source.id}>{source.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            {loading && !isGeneratingLocalInsights && (
-                                <div className="mt-2 flex items-center text-sm text-gray-500"><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading sheet data...</div>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    {/* Filters Card */}
-                    <Card className="shadow-sm border border-gray-200">
-                        <CardHeader>
-                            <CardTitle className="text-lg font-semibold text-gray-800 flex items-center justify-between">
-                                <span><ListFilter className="inline h-5 w-5 mr-2 text-blue-600" />2. Filter Data</span>
-                                <Button
-                                    variant="outline" size="sm"
-                                    onClick={addFilter}
-                                    disabled={filters.length >= 5 || !selectedSource || !columnsAvailable || loading}
-                                    title={!selectedSource ? "Select a data source first" : !columnsAvailable ? "Columns loading..." : filters.length >= 5 ? "Maximum 5 filters allowed" : "Add a new filter"}
-                                >
-                                    <PlusCircle size={16} className="mr-1" /> Add Filter
-                                </Button>
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2 min-h-[60px]">
-                            {/* Active Filter Editor */}
-                            {activeFilterId !== null && columnsAvailable && (
-                                <div className="mb-3 p-3 bg-gray-50 border rounded-md overflow-hidden">
-                                    {(() => {
-                                        const filter = filters.find(f => f.id === activeFilterId);
-                                        if (!filter) return null;
-                                        const column = columns.find(col => col.field === filter.field);
-                                        const currentColumnType = column?.type ?? 'dimension';
-                                        const operators = getFilterOperatorsForType(currentColumnType);
-                                        return (
-                                            <div className="space-y-3">
-                                                <div className="flex items-center justify-between">
-                                                    <h3 className="font-medium text-sm text-gray-700">Edit Filter: {columns.find(c => c.field === filters.find(f => f.id === activeFilterId)?.field)?.name ?? '...'}</h3>
-                                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setActiveFilterId(null)}><X size={16} /></Button>
-                                                </div>
-                                                <Select value={filter.field} onValueChange={(value) => updateFilter(filter.id, 'field', value)} disabled={!columnsAvailable}>
-                                                    <SelectTrigger className="w-full bg-white text-sm"><SelectValue placeholder="Select field..." /></SelectTrigger>
-                                                    <SelectContent>{!columnsAvailable && <SelectItem value="" disabled>Loading columns...</SelectItem>}{columns.map(col => (<SelectItem key={col.field} value={col.field}>{col.name}</SelectItem>))}</SelectContent>
-                                                </Select>
-                                                <Select value={filter.operator} onValueChange={(value) => updateFilter(filter.id, 'operator', value as FilterOperatorType)} disabled={!columnsAvailable || operators.length === 0}>
-                                                    <SelectTrigger className="w-full bg-white text-sm"><SelectValue placeholder="Select operator..." /></SelectTrigger>
-                                                    <SelectContent>{operators.map(op => (<SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>))}</SelectContent>
-                                                </Select>
-                                                <input type={currentColumnType === 'metric' ? 'number' : currentColumnType === 'date' ? 'date' : 'text'} className="p-2 border rounded-md w-full text-sm bg-white disabled:bg-gray-100 disabled:cursor-not-allowed" value={filter.value} onChange={(e) => updateFilter(filter.id, 'value', e.target.value)} placeholder="Enter value" disabled={!columnsAvailable} step={currentColumnType === 'metric' ? 'any' : undefined} />
-                                                <div className="flex justify-between pt-2">
-                                                    <Button variant="ghost" size="sm" onClick={() => setActiveFilterId(null)}>Cancel</Button>
-                                                    <div className="flex space-x-2">
-                                                        <Button variant="destructive" size="sm" onClick={() => { removeFilter(filter.id); setActiveFilterId(null); }}>Remove</Button>
-                                                        <Button variant="default" size="sm" onClick={() => setActiveFilterId(null)} disabled={!columnsAvailable}>Apply Filter</Button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            )}
-                            {/* Filter List Badges */}
-                            {filters.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                    {filters.map(filter => {
-                                        const column = columns.find(col => col.field === filter.field);
-                                        const operatorInfo = getFilterOperatorsForType(column?.type || 'dimension').find(op => op.value === filter.operator);
-                                        return (
-                                            <Badge key={filter.id} variant="secondary" className="py-1 px-2 cursor-pointer group relative hover:bg-gray-200 rounded-full text-xs" onClick={() => setActiveFilterId(filter.id)}>
-                                                {column?.name || filter.field} {operatorInfo?.label || filter.operator} {filter.value}
-                                                <button className="ml-1.5 opacity-50 group-hover:opacity-100 text-red-500 hover:text-red-700 rounded-full p-0.5 hover:bg-red-100" onClick={(e) => { e.stopPropagation(); removeFilter(filter.id); if (activeFilterId === filter.id) setActiveFilterId(null); }} title="Remove filter">
-                                                    <X size={10} />
-                                                </button>
-                                            </Badge>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <p className="text-sm text-gray-500 italic">No filters applied.</p>
-                            )}
-                        </CardContent>
-                    </Card>
-                </div>
+                {/* Step 1 & 2: Data Source & Filters */}
+                <DataSourceFilterSection
+                    dataSources={dataSources}
+                    selectedSource={selectedSource}
+                    setSelectedSource={setSelectedSource}
+                    loading={loading}
+                    isGeneratingLocalInsights={isGeneratingLocalInsights}
+                    columnsAvailable={columns.length > 0}
+                    filters={filters}
+                    addFilter={addFilter}
+                    updateFilter={updateFilter}
+                    removeFilter={removeFilter}
+                    activeFilterId={activeFilterId}
+                    setActiveFilterId={setActiveFilterId}
+                    getFilterOperatorsForType={getFilterOperatorsForType}
+                />
 
                 {/* Loading/Error Alerts */}
                 {loading && !isGeneratingLocalInsights && (
@@ -308,7 +329,7 @@ export const DataInsights: React.FC = () => {
                     <Alert variant="default" className="bg-yellow-50 border-yellow-200 text-yellow-800">
                         <AlertTriangle className="h-4 w-4" />
                         <AlertTitle>No Data or Columns</AlertTitle>
-                        <AlertDescription>Successfully connected, but no data or columns were found for '{selectedSource.name}'. Please check the sheet.</AlertDescription>
+                        <AlertDescription>Successfully connected to Tab, but no data or columns were found. Please check the sheet.</AlertDescription>
                     </Alert>
                 )}
 
@@ -317,7 +338,7 @@ export const DataInsights: React.FC = () => {
                     <Alert variant="default" className="bg-blue-50 border-blue-200 text-blue-800">
                         <Info className="h-4 w-4" />
                         <AlertTitle>Time Series Data Detected</AlertTitle>
-                        <AlertDescription>A 'date' column was found. Outlier detection/exclusion has been automatically disabled for time series analysis.</AlertDescription>
+                        <AlertDescription>A date column was found. Outlier detection/exclusion has been automatically disabled for time series analysis.</AlertDescription>
                     </Alert>
                 )}
 
@@ -386,12 +407,35 @@ export const DataInsights: React.FC = () => {
                     </div>
                 )}
 
-                {/* Step 4: Review Summary & Outliers (Appears when data is loaded AND NOT time series) */}
-                {selectedSource && !loading && columnsAvailable && !isTimeSeries && (
+                {/* Data Visualization Section */}
+                {showVisualization && selectedSource && !loading && !apiError && columnsAvailable && data.length > 0 && (
+                    <DataVisualizationSection
+                        columns={columns}
+                        data={data}
+                        chartType={chartType}
+                        setChartType={setChartType}
+                        selectedDimension={selectedDimension}
+                        setSelectedDimension={setSelectedDimension}
+                        selectedMetric={selectedMetric}
+                        setSelectedMetric={setSelectedMetric}
+                        selectedSecondaryMetric={selectedSecondaryMetric}
+                        setSelectedSecondaryMetric={setSelectedSecondaryMetric}
+                        groupingDimension={groupingDimension}
+                        groupingDimensionName={groupingDimensionName}
+                        groupByValue={groupByValue}
+                        setGroupByValue={setGroupByValue}
+                        processedData={processedData}
+                        loading={loading}
+                        isTimeSeries={isTimeSeries}
+                    />
+                )}
+
+                {/* Step 4: Review Summary & Outliers (Always shown when data is loaded, but outlier detection disabled for time series) */}
+                {selectedSource && !loading && columnsAvailable && (
                     <div className="space-y-4 p-6 border rounded-lg shadow-sm bg-white">
                         <div className="flex items-center justify-between">
                             <h2 className="text-xl font-semibold text-gray-800"><Activity className="inline h-5 w-5 mr-2 text-teal-600" />4. Review Summary & Outliers</h2>
-                            {outliers && outliers.length > 0 && (
+                            {!isTimeSeries && outliers && outliers.length > 0 && (
                                 <div className="flex items-center space-x-2">
                                     <Switch
                                         id="exclude-outliers"
@@ -631,10 +675,43 @@ export const DataInsights: React.FC = () => {
                         <Separator className="my-0" />
 
                         {/* Prompt & Generate Button */}
-                        {!loadingInsights && !insights && !apiError && (
+                        {!loadingInsights && !insights && !openaiInsights && !geminiInsights && !apiError && (
                             <div className="space-y-4">
                                 <div>
-                                    <label htmlFor="aiPrompt" className="block text-sm font-medium mb-1 text-gray-700">AI Analysis Prompt</label>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label htmlFor="aiPrompt" className="block text-sm font-medium text-gray-700">AI Analysis Prompt</label>
+                                        <div className="flex items-center gap-4">
+                                            {/* Side by Side Toggle */}
+                                            <div className="flex items-center space-x-2">
+                                                <Switch
+                                                    id="side-by-side"
+                                                    checked={showSideBySide}
+                                                    onCheckedChange={setShowSideBySide}
+                                                    aria-label="Compare both AI models side by side"
+                                                />
+                                                <Label htmlFor="side-by-side" className="text-sm font-medium text-gray-700 flex items-center">
+                                                    <Split className="h-4 w-4 mr-1 text-gray-500" />
+                                                    Side by Side
+                                                </Label>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Info size={14} className="text-gray-400 cursor-help" />
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        <p className="text-sm">Compare insights from both Gemini and OpenAI side by side</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </div>
+
+                                            {/* Only show the model selector if side-by-side is OFF */}
+                                            {!showSideBySide && (
+                                                <ModelSelector
+                                                    selectedProvider={llmProvider}
+                                                    onProviderChange={setLlmProvider}
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
                                     <Textarea
                                         id="aiPrompt"
                                         placeholder="e.g., Analyze performance trends, identify top performers, suggest optimizations..."
@@ -642,7 +719,7 @@ export const DataInsights: React.FC = () => {
                                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}
                                         rows={3}
                                         className="w-full shadow-sm border-gray-300 focus:ring-indigo-500 focus:border-indigo-500"
-                                        disabled={loadingInsights}
+                                        disabled={loadingInsights || loadingGeminiInsights || loadingOpenaiInsights}
                                     />
                                     {(() => { // IIFE to calculate rowsToSend and render the note
                                         let rowsToSend = filteredRows;
@@ -655,17 +732,20 @@ export const DataInsights: React.FC = () => {
                                                     <>Note: Outliers will be {excludeOutliers ? 'EXCLUDED' : 'INCLUDED'} in the data sent for AI analysis based on the switch above.<br /></>
                                                 )}
                                                 Sending {rowsToSend} rows for analysis (Recommended max: {MAX_RECOMMENDED_INSIGHT_ROWS}).
+                                                {!showSideBySide && (
+                                                    <span className="ml-1">Using {llmProvider === 'gemini' ? 'Gemini AI' : 'OpenAI'} for analysis.</span>
+                                                )}
                                             </p>
                                         );
                                     })()}
                                 </div>
                                 <Button
                                     onClick={handleGenerateApiInsightsClick}
-                                    disabled={loadingInsights || !prompt.trim() || !localInsightsSummary}
+                                    disabled={loadingInsights || loadingGeminiInsights || loadingOpenaiInsights || !prompt.trim() || !localInsightsSummary}
                                     size="lg"
                                     className="bg-indigo-600 hover:bg-indigo-700 text-white shadow hover:shadow-md transition-all duration-150"
                                 >
-                                    {loadingInsights ? (
+                                    {loadingInsights || loadingGeminiInsights || loadingOpenaiInsights ? (
                                         <><Loader2 className="animate-spin mr-2" size={16} /> Generating...</>
                                     ) : (
                                         <><BrainCircuit size={16} className="mr-2" /> Generate AI Insights</>
@@ -676,27 +756,77 @@ export const DataInsights: React.FC = () => {
 
                         {/* Loading/Error/Result Display for API */}
                         <div className="space-y-4 mt-4">
-                            {loadingInsights && (
+                            {/* Loading indicator for single model view */}
+                            {loadingInsights && !showSideBySide && (
                                 <Alert variant="default" className="w-full bg-blue-50 border-blue-200 text-blue-800">
                                     <Loader2 className="animate-spin h-4 w-4" />
                                     <AlertTitle>Generating AI Insights</AlertTitle>
                                     <AlertDescription>Please wait, this may take a moment...</AlertDescription>
                                 </Alert>
                             )}
-                            {apiError && loadingInsights && (
+
+                            {/* Error display for single model view */}
+                            {apiError && !showSideBySide && (
                                 <Alert variant="destructive" className="w-full">
                                     <MessageSquareWarning className="h-4 w-4" />
                                     <AlertTitle>Error Generating Insights</AlertTitle>
                                     <AlertDescription>{apiError}</AlertDescription>
                                 </Alert>
                             )}
-                            {insights && !apiError && !loadingInsights && (
+
+                            {/* Results for single model view */}
+                            {insights && !apiError && !loadingInsights && !showSideBySide && (
                                 <div className="p-4 bg-green-50 border border-green-200 rounded-lg shadow-sm">
-                                    <h3 className="text-lg font-semibold mb-2 text-green-800">Generated AI Insights</h3>
-                                    <div className="prose prose-sm max-w-none prose-headings:font-semibold prose-headings:text-gray-800 prose-a:text-blue-600 hover:prose-a:text-blue-700 prose-strong:text-gray-700 prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
-                                        <ReactMarkdown>{insights}</ReactMarkdown>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h3 className="text-lg font-semibold text-green-800">
+                                            Generated AI Insights ({llmProvider === 'gemini' ? 'Gemini' : 'OpenAI'})
+                                            <Badge variant="outline" className="ml-2 bg-green-100 text-green-800 hover:bg-green-100">
+                                                {llmProvider === 'gemini' ? modelNames.gemini : modelNames.openai}
+                                            </Badge>
+                                        </h3>
+                                        {llmProvider === 'gemini' && geminiTokenUsage && (
+                                            <div className="flex items-center text-xs text-green-600">
+                                                <Cpu className="h-3 w-3 mr-1" />
+                                                <span>{geminiTokenUsage.inputTokens + geminiTokenUsage.outputTokens} tokens</span>
+                                                <span className="ml-1 text-green-500">({geminiTokenUsage.inputTokens} in / {geminiTokenUsage.outputTokens} out)</span>
+                                            </div>
+                                        )}
+                                        {llmProvider === 'openai' && openaiTokenUsage && (
+                                            <div className="flex items-center text-xs text-green-600">
+                                                <Cpu className="h-3 w-3 mr-1" />
+                                                <span>{openaiTokenUsage.inputTokens + openaiTokenUsage.outputTokens} tokens</span>
+                                                <span className="ml-1 text-green-500">({openaiTokenUsage.inputTokens} in / {openaiTokenUsage.outputTokens} out)</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="prose prose-sm max-w-none
+                                        prose-headings:font-semibold 
+                                        prose-headings:text-gray-800 
+                                        prose-h2:text-xl prose-h2:font-bold prose-h2:text-green-700 prose-h2:mt-6 prose-h2:mb-3
+                                        prose-h3:text-lg prose-h3:font-semibold prose-h3:text-green-600 prose-h3:mt-5 prose-h3:mb-2
+                                        prose-p:my-2 prose-p:leading-relaxed
+                                        prose-a:text-blue-600 hover:prose-a:text-blue-700 
+                                        prose-strong:text-gray-800 prose-strong:font-semibold
+                                        prose-ul:my-2 prose-ul:pl-6
+                                        prose-li:my-1
+                                        prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
+                                    ">
+                                        <ReactMarkdown className="insights-content">{insights}</ReactMarkdown>
                                     </div>
                                 </div>
+                            )}
+
+                            {/* Side by Side View */}
+                            {showSideBySide && (
+                                <SideBySideInsights
+                                    geminiInsights={geminiInsights}
+                                    openaiInsights={openaiInsights}
+                                    isLoadingGemini={loadingGeminiInsights}
+                                    isLoadingOpenAI={loadingOpenaiInsights}
+                                    geminiTokenUsage={geminiTokenUsage}
+                                    openaiTokenUsage={openaiTokenUsage}
+                                    modelNames={modelNames}
+                                />
                             )}
                         </div>
                     </div>
