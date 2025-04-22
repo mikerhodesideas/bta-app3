@@ -53,7 +53,10 @@ export interface OutlierType {
     column: string;
     field: string;
     value: number;
-    row: DataRowType;
+    rowData: DataRowType;
+    reason?: string;
+    mean?: number;
+    stdDev?: number;
 }
 
 export type BaseDataRowType = {
@@ -65,5 +68,36 @@ export type DataRowFields = {
 };
 
 export type DataRowType = DataRowFields & {
-    isOutlier: boolean;
-}; 
+    isOutlier?: boolean;
+};
+
+export interface MetricSummaryItem {
+    name: string;
+    min?: number;
+    max?: number;
+    avg?: number;
+    sum?: number;
+}
+
+export interface DimensionValueSummary {
+    value: string;
+    count: number;
+    metrics: {
+        cost?: number;
+        clicks?: number;
+        value?: number;
+        conv?: number;
+    };
+}
+
+export interface DimensionSummaryItem {
+    name: string;
+    uniqueCount?: number;
+    topValues?: DimensionValueSummary[];
+}
+
+export interface InsightSummaryType {
+    rowCount: number;
+    metrics: MetricSummaryItem[];
+    dimensions: DimensionSummaryItem[];
+} 

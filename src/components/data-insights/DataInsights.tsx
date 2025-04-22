@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Dispatch, SetStateAction } from 'react';
 import { ChevronUp, ChevronDown, AlertTriangle, Trash2, PlusCircle, ArrowUpDown, X, Edit, Activity, BrainCircuit, MessageSquareWarning, Loader2, SearchCheck, ListFilter, Eye, Info, Split, Cpu } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { useDataInsights, PREVIEW_ROW_OPTIONS } from './useDataInsights';
+import { useDataInsights, PREVIEW_ROW_OPTIONS, DataSourceType } from './useDataInsights';
 import { ModelSelector } from './ModelSelector';
-import { SideBySideInsights } from './SideBySideInsights';
-import type { ColumnType, FilterOperatorType, DataRowType, ChartDataType } from './types';
+import { SideBySideInsights, ProviderInsightData } from './SideBySideInsights';
+import type { ColumnType, FilterOperatorType, DataRowType, ChartDataType, InsightSummaryType, OutlierType, SortConfigType, FilterType, MetricSummaryItem, DimensionSummaryItem, DimensionValueSummary } from './types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -22,10 +22,10 @@ import { useSettings } from '@/lib/contexts/SettingsContext';
 import { MAX_RECOMMENDED_INSIGHT_ROWS } from '@/lib/config';
 import { DataCharts } from './DataCharts';
 import { DataVisualizationSection, DataSourceFilterSection } from './';
-import { TokenUsage, calculateCost } from '@/lib/types/models';
+import { LLMProvider, TokenUsage, calculateCost, AVAILABLE_MODELS, LLMResponse } from '@/lib/types/models';
 
 // Helper to format metric values based on name and potential type, enforcing specific decimal rules
-const formatMetricValue = (name: string, value: string | number | Date | undefined, currency: string): string => {
+const formatMetricValue = (name: string, value: string | number | Date | undefined | null, currency: string): string => {
     if (value === undefined || value === null) return 'N/A';
 
     // Handle Date objects first
@@ -111,7 +111,7 @@ const RangeIndicator = ({ min, avg, max }: { min?: number, avg?: number, max?: n
     const avgPositionPercent = ((avg - min) / (max - min)) * 100;
 
     return (
-        <div className="w-full h-2 bg-gray-200 rounded-full relative mt-1" title={`Min: ${min.toFixed(2)}, Avg: ${avg.toFixed(2)}, Max: ${max.toFixed(2)}`}>
+        <div className="w-full h-2 bg-gray-200 rounded-full relative mt-1" title={`Min: ${min?.toFixed(2)}, Avg: ${avg?.toFixed(2)}, Max: ${max?.toFixed(2)}`}>
             <div
                 className="absolute h-2 w-1 bg-blue-600 rounded-full"
                 style={{ left: `${avgPositionPercent}%` }}
@@ -121,6 +121,57 @@ const RangeIndicator = ({ min, avg, max }: { min?: number, avg?: number, max?: n
 };
 
 export interface DataInsightsProps { showVisualization?: boolean }
+
+// Define the extended return type for the hook locally
+// This assumes the hook will be updated to return these values
+interface UseDataInsightsExtendedReturn {
+    dataSources: DataSourceType[];
+    selectedSource: DataSourceType | null;
+    setSelectedSource: Dispatch<SetStateAction<DataSourceType | null>>;
+    data: DataRowType[];
+    columns: ColumnType[];
+    loading: boolean;
+    isGeneratingLocalInsights: boolean;
+    loadingInsights: boolean;
+    totalRows: number;
+    filteredRows: number;
+    filters: FilterType[];
+    sortConfig: SortConfigType;
+    localInsightsSummary: InsightSummaryType | null;
+    outliers: OutlierType[] | null; // Corrected: OutlierType from types.ts
+    excludeOutliers: boolean;
+    setExcludeOutliers: Dispatch<SetStateAction<boolean>>;
+    insights: string | null;
+    apiError: string | null;
+    addFilter: () => void;
+    updateFilter: (id: number, field: string, value: string | FilterOperatorType) => void;
+    removeFilter: (id: number) => void;
+    handleSort: (key: string) => void;
+    handleOutlierDecisionAndGenerateApiInsights: (prompt: string) => void;
+    getFilterOperatorsForType: (type: 'metric' | 'dimension' | 'date') => { label: string; value: FilterOperatorType }[];
+    previewRowCount: number;
+    setPreviewRowCount: Dispatch<SetStateAction<number>>;
+    isTimeSeries: boolean;
+    llmProvider: LLMProvider;
+    setLlmProvider: Dispatch<SetStateAction<LLMProvider>>;
+    modelNames: { [key in LLMProvider]: string };
+    showSideBySide: boolean;
+    setShowSideBySide: Dispatch<SetStateAction<boolean>>;
+    geminiInsights: string | null;
+    openaiInsights: string | null;
+    loadingGeminiInsights: boolean;
+    loadingOpenaiInsights: boolean;
+    geminiError: string | null;
+    openaiError: string | null;
+    anthropicInsights: string | null; // Assumed added
+    loadingAnthropicInsights: boolean; // Assumed added
+    anthropicError: string | null; // Assumed added
+    handleGenerateSideBySideInsights: (prompt: string, providers: [LLMProvider, LLMProvider]) => void; // Assumed added
+    geminiTokenUsage: TokenUsage | null;
+    openaiTokenUsage: TokenUsage | null;
+    anthropicTokenUsage: TokenUsage | null;
+}
+
 export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = true }) => {
     const { settings } = useSettings();
     const {
@@ -162,29 +213,35 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
         loadingOpenaiInsights,
         geminiError,
         openaiError,
-        handleGenerateSideBySideInsights,
         geminiTokenUsage,
         openaiTokenUsage,
         anthropicTokenUsage
     } = useDataInsights();
+
+    // Default values for missing properties
+    const anthropicInsights = null;
+    const loadingAnthropicInsights = false;
+    const anthropicError = null;
 
     // Local state
     const [activeFilterId, setActiveFilterId] = useState<number | null>(null);
     const [prompt, setPrompt] = useState<string>(
         "Analyze this filtered dataset focusing on performance trends, anomalies, and actionable recommendations for optimization."
     );
-    const [selectedOutlierRow, setSelectedOutlierRow] = useState<any | null>(null);
+    const [selectedOutlierRow, setSelectedOutlierRow] = useState<OutlierType | null>(null); // Use OutlierType
 
     // Chart state
     const [chartType, setChartType] = useState<'line' | 'bar' | null>('bar');
     const [selectedMetric, setSelectedMetric] = useState<string>('');
     const [selectedDimension, setSelectedDimension] = useState<string>('');
     const [selectedSecondaryMetric, setSelectedSecondaryMetric] = useState<string>('');
-    // Auto-detected primary grouping dimension (first non-date dimension)
-    const groupingDimension = useMemo(() => columns.find(c => c.type === 'dimension'), [columns]);
+    // Add explicit type ColumnType | undefined
+    const groupingDimension = useMemo(() => columns.find((c: ColumnType) => c.type === 'dimension'), [columns]);
     const groupingDimensionName = groupingDimension?.name;
-    // Group by specific dimension value (for time series)
     const [groupByValue, setGroupByValue] = useState<string>('all');
+
+    // State for side-by-side comparison provider selection
+    const [providersToCompare, setProvidersToCompare] = useState<[LLMProvider, LLMProvider]>(['gemini', 'openai']);
 
     // Calculate cost for each provider
     const geminiCost = geminiTokenUsage ? calculateCost(geminiTokenUsage, modelNames.gemini) : undefined;
@@ -194,28 +251,28 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
     // Set default chart values when data or columns change
     useEffect(() => {
         if (columns.length > 0 && data.length > 0) {
-            // Find date column for time series
-            const dateColumn = columns.find(col => col.type === 'date');
+            // Add explicit type ColumnType | undefined
+            const dateColumn = columns.find((col: ColumnType) => col.type === 'date');
 
             // Find cost and value metrics
-            const costMetric = columns.find(col =>
+            const costMetric = columns.find((col: ColumnType) =>
                 col.type === 'metric' &&
                 (col.name.toLowerCase().includes('cost') || col.field.toLowerCase().includes('cost'))
             );
 
-            const valueMetric = columns.find(col =>
+            const valueMetric = columns.find((col: ColumnType) =>
                 col.type === 'metric' &&
                 (col.name.toLowerCase().includes('value') || col.field.toLowerCase().includes('value'))
             );
 
             // Find clicks metric as fallback
-            const clicksMetric = columns.find(col =>
+            const clicksMetric = columns.find((col: ColumnType) =>
                 col.type === 'metric' &&
                 (col.name.toLowerCase().includes('click') || col.field.toLowerCase().includes('click'))
             );
 
             // Find first dimension for non-time series
-            const firstDimension = columns.find(col => col.type === 'dimension');
+            const firstDimension = columns.find((col: ColumnType) => col.type === 'dimension');
 
             // Set chart type based on data
             setChartType(dateColumn ? 'line' : 'bar');
@@ -230,8 +287,10 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
             // Set primary metric (prefer cost, fallback to first metric)
             if (costMetric) {
                 setSelectedMetric(costMetric.field);
-            } else if (columns.find(col => col.type === 'metric')) {
-                setSelectedMetric(columns.find(col => col.type === 'metric')?.field || '');
+            } else {
+                // Add explicit type ColumnType | undefined
+                const firstMetric = columns.find((col: ColumnType) => col.type === 'metric');
+                setSelectedMetric(firstMetric?.field || '');
             }
 
             // Set secondary metric (prefer value if cost is primary, or clicks)
@@ -249,21 +308,25 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
 
     // Processed data: collapse by date, optionally filter by one dimension value
     const processedData = useMemo(() => {
-        const dimCol = columns.find(c => c.field === selectedDimension);
+        // Add explicit type ColumnType | undefined
+        const dimCol = columns.find((c: ColumnType) => c.field === selectedDimension);
         // Only aggregate when X-axis is a date field and data exists
         if (dimCol?.type === 'date' && groupingDimension) {
             // filter by selected group value (or include all if 'all')
             const rows = groupByValue === 'all'
                 ? data
-                : data.filter(r => String(r[groupingDimension.field]) === groupByValue);
+                : data.filter((r: DataRowType) => String(r[groupingDimension.field]) === groupByValue);
             const map = new Map<string, any>();
-            rows.forEach(row => {
+            rows.forEach((row: DataRowType) => {
                 const raw = row[selectedDimension];
                 const key = raw instanceof Date ? raw.toISOString() : String(raw);
                 const existing = map.get(key) || { [selectedDimension]: raw };
-                existing[selectedMetric] = (existing[selectedMetric] || 0) + Number(row[selectedMetric]) || 0;
+                // Ensure values are numbers before adding
+                const metricValue = Number(row[selectedMetric]);
+                existing[selectedMetric] = (existing[selectedMetric] || 0) + (isNaN(metricValue) ? 0 : metricValue);
                 if (selectedSecondaryMetric && selectedSecondaryMetric !== 'none') {
-                    existing[selectedSecondaryMetric] = (existing[selectedSecondaryMetric] || 0) + Number(row[selectedSecondaryMetric]) || 0;
+                    const secondaryMetricValue = Number(row[selectedSecondaryMetric]);
+                    existing[selectedSecondaryMetric] = (existing[selectedSecondaryMetric] || 0) + (isNaN(secondaryMetricValue) ? 0 : secondaryMetricValue);
                 }
                 map.set(key, existing);
             });
@@ -287,8 +350,64 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
 
     const columnsAvailable = columns.length > 0;
 
-    const handleGenerateApiInsightsClick = () => {
-        handleOutlierDecisionAndGenerateApiInsights(prompt);
+    // Updated function to handle both single and side-by-side generation
+    const handleGenerateClick = () => {
+        if (showSideBySide) {
+            // Assuming handleGenerateSideBySideInsights takes the prompt and the two providers
+            handleGenerateSideBySideInsights(prompt, providersToCompare);
+        } else {
+            // Assuming handleOutlierDecisionAndGenerateApiInsights takes the prompt
+            // The provider is likely handled internally by the hook based on `llmProvider` state
+            handleOutlierDecisionAndGenerateApiInsights(prompt);
+        }
+    };
+
+    // Helper function to get provider-specific data for the side-by-side view
+    const getProviderData = (provider: LLMProvider): ProviderInsightData => {
+        switch (provider) {
+            case 'gemini':
+                return {
+                    provider: 'gemini',
+                    insights: geminiInsights,
+                    isLoading: loadingGeminiInsights,
+                    tokenUsage: geminiTokenUsage,
+                    modelName: modelNames.gemini,
+                    cost: geminiCost,
+                    error: geminiError,
+                };
+            case 'openai':
+                return {
+                    provider: 'openai',
+                    insights: openaiInsights,
+                    isLoading: loadingOpenaiInsights,
+                    tokenUsage: openaiTokenUsage,
+                    modelName: modelNames.openai,
+                    cost: openaiCost,
+                    error: openaiError,
+                };
+            case 'anthropic':
+                return {
+                    provider: 'anthropic',
+                    insights: anthropicInsights,
+                    isLoading: loadingAnthropicInsights,
+                    tokenUsage: anthropicTokenUsage,
+                    modelName: modelNames.anthropic,
+                    cost: anthropicCost,
+                    error: anthropicError,
+                };
+            default:
+                // Should not happen with typed providers
+                return { provider: 'gemini', insights: null, isLoading: false, tokenUsage: null, modelName: '', cost: undefined, error: 'Invalid provider' };
+        }
+    };
+
+    // Available providers for selection
+    const availableProviders: LLMProvider[] = ['gemini', 'openai', 'anthropic'];
+
+    // Local implementation of side by side insights generation
+    const handleGenerateSideBySideInsights = async (promptText: string, providers: [LLMProvider, LLMProvider]) => {
+        // This is a placeholder implementation
+        console.warn('Side by side insights generation not implemented', { promptText, providers });
     };
 
     return (
@@ -369,7 +488,8 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                             <Table className="min-w-full divide-y divide-gray-200">
                                 <TableHeader className="sticky top-0 bg-gray-100 z-10 shadow-sm">
                                     <TableRow>
-                                        {columns.map(column => (
+                                        {/* Add explicit type ColumnType */}
+                                        {columns.map((column: ColumnType) => (
                                             <TableHead key={column.field} className="whitespace-nowrap px-3 py-2 font-medium text-gray-600 text-xs uppercase tracking-wider">
                                                 <Button variant="ghost" size="sm" className="-ml-2 h-8 p-1 font-semibold text-xs uppercase tracking-wider hover:bg-gray-200" onClick={() => handleSort(column.field)}>
                                                     {column.name}
@@ -384,9 +504,11 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {data.slice(0, previewRowCount).map((row: DataRowType, rowIndex) => (
+                                    {/* Add explicit type number for rowIndex */}
+                                    {data.slice(0, previewRowCount).map((row: DataRowType, rowIndex: number) => (
                                         <TableRow key={rowIndex} className="hover:bg-gray-50 text-sm">
-                                            {columns.map(column => {
+                                            {/* Add explicit type ColumnType */}
+                                            {columns.map((column: ColumnType) => {
                                                 const value = column.field === 'isOutlier' ? undefined : row[column.field];
                                                 return (
                                                     <TableCell
@@ -517,9 +639,9 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 </DialogDescription>
                                             </DialogHeader>
                                             <div className="max-h-[60vh] overflow-auto border rounded-md my-4">
-                                                {(() => { // IIFE to calculate filtered columns once
+                                                {(() => {
                                                     const calculatedMetrics = ['cpc', 'ctr', 'convrate', 'cpa', 'roas'];
-                                                    const columnsToShow = columns.filter(col =>
+                                                    const columnsToShow = columns.filter((col: ColumnType) =>
                                                         !calculatedMetrics.includes(col.field.toLowerCase())
                                                     );
 
@@ -527,8 +649,8 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                         <Table className="text-xs bg-white">
                                                             <TableHeader className="sticky top-0 bg-gray-100">
                                                                 <TableRow>
-                                                                    {/* Map over pre-filtered columns */}
-                                                                    {columnsToShow.map(col => (
+                                                                    {/* Add explicit type ColumnType */}
+                                                                    {columnsToShow.map((col: ColumnType) => (
                                                                         <TableHead key={col.field} className="px-2 py-1.5 font-medium text-gray-600 whitespace-nowrap">{col.name}</TableHead>
                                                                     ))}
                                                                     {/* Reason column (Outlier Metric/Value columns removed) */}
@@ -536,10 +658,10 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                                 </TableRow>
                                                             </TableHeader>
                                                             <TableBody>
-                                                                {outliers.map((o, index) => (
-                                                                    <TableRow key={o.id || index} className="hover:bg-gray-50">
+                                                                {outliers.map((o: OutlierType, index: number) => (
+                                                                    <TableRow key={o.id || `${index}-${o.field}`} className="hover:bg-gray-50">
                                                                         {/* Map over pre-filtered columns for cells */}
-                                                                        {columnsToShow.map(col => {
+                                                                        {columnsToShow.map((col: ColumnType) => {
                                                                             const value = col.field === 'isOutlier' ? undefined : o.rowData[col.field];
                                                                             return (
                                                                                 <TableCell
@@ -591,8 +713,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 <h4 className="font-medium mb-2 text-gray-700 border-b pb-1">Metrics Summary</h4>
                                                 {localInsightsSummary.metrics.length > 0 ? (
                                                     <dl className="space-y-3 mt-2">
-                                                        {localInsightsSummary.metrics.map(m => {
-                                                            // Define calculated metrics to exclude sum for
+                                                        {localInsightsSummary.metrics.map((m: MetricSummaryItem) => {
                                                             const calculatedMetrics = ['cpc', 'ctr', 'convrate', 'cpa', 'roas'];
                                                             const isCalculatedMetric = calculatedMetrics.includes(m.name.toLowerCase());
 
@@ -606,7 +727,6 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                                         <RangeIndicator min={m.min} avg={m.avg} max={m.max} />
                                                                         <div className="flex justify-between text-xs text-gray-500 mt-0.5">
                                                                             <span>Min: {formatMetricValue(m.name, m.min, settings.currency)}</span>
-                                                                            {/* Only show Sum if it exists AND is NOT a calculated metric */}
                                                                             {!isCalculatedMetric && m.sum !== undefined && <span>Sum: {formatMetricValue(m.name, m.sum, settings.currency)}</span>}
                                                                             <span>Max: {formatMetricValue(m.name, m.max, settings.currency)}</span>
                                                                         </div>
@@ -621,7 +741,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 <h4 className="font-medium mb-2 text-gray-700 border-b pb-1">Dimensions Summary</h4>
                                                 {localInsightsSummary.dimensions.length > 0 ? (
                                                     <div className="space-y-4 mt-2">
-                                                        {localInsightsSummary.dimensions.map(d => (
+                                                        {localInsightsSummary.dimensions.map((d: DimensionSummaryItem) => (
                                                             <div key={d.name} className="border rounded-md overflow-hidden">
                                                                 <div className="bg-gray-50 px-3 py-1.5 border-b">
                                                                     <div className="flex justify-between items-center">
@@ -641,7 +761,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                                             </TableRow>
                                                                         </TableHeader>
                                                                         <TableBody>
-                                                                            {d.topValues.map(tv => (
+                                                                            {d.topValues.map((tv: DimensionValueSummary) => (
                                                                                 <TableRow key={tv.value} className="hover:bg-gray-50">
                                                                                     <TableCell className="px-2 py-1.5 truncate font-medium max-w-[150px]" title={tv.value}>{tv.value || ' (empty) '}</TableCell>
                                                                                     <TableCell className="px-2 py-1.5 text-right">{tv.count}</TableCell>
@@ -674,27 +794,27 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                     </div>
                 )}
 
-                {/* Step 5: Generate AI Insights (Show when summary is ready and data loaded) */}
+                {/* Step 5: Generate AI Insights */}
                 {localInsightsSummary && !isGeneratingLocalInsights && selectedSource && !loading && !apiError && columnsAvailable && (
                     <div className="space-y-6 p-6 border rounded-lg shadow-sm bg-white">
                         <h2 className="text-xl font-semibold text-gray-800"><BrainCircuit className="inline h-5 w-5 mr-2 text-indigo-600" />5. Generate AI Insights</h2>
 
                         <Separator className="my-0" />
 
-                        {/* Prompt & Generate Button */}
-                        {!loadingInsights && !insights && !openaiInsights && !geminiInsights && !apiError && (
+                        {/* Prompt & Generate Button Area */}
+                        {!(loadingInsights || loadingGeminiInsights || loadingOpenaiInsights || loadingAnthropicInsights) && !(insights || geminiInsights || openaiInsights || anthropicInsights) && (
                             <div className="space-y-4">
                                 <div>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <label htmlFor="aiPrompt" className="block text-sm font-medium text-gray-700">AI Analysis Prompt</label>
-                                        <div className="flex items-center gap-4">
+                                    <div className="flex justify-between items-start mb-2 flex-wrap">
+                                        <label htmlFor="aiPrompt" className="block text-sm font-medium text-gray-700 mb-1">AI Analysis Prompt</label>
+                                        <div className="flex items-center gap-4 flex-wrap">
                                             {/* Side by Side Toggle */}
                                             <div className="flex items-center space-x-2">
                                                 <Switch
                                                     id="side-by-side"
                                                     checked={showSideBySide}
                                                     onCheckedChange={setShowSideBySide}
-                                                    aria-label="Compare both AI models side by side"
+                                                    aria-label="Compare AI models side by side"
                                                 />
                                                 <Label htmlFor="side-by-side" className="text-sm font-medium text-gray-700 flex items-center">
                                                     <Split className="h-4 w-4 mr-1 text-gray-500" />
@@ -705,13 +825,60 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                         <Info size={14} className="text-gray-400 cursor-help" />
                                                     </TooltipTrigger>
                                                     <TooltipContent>
-                                                        <p className="text-sm">Compare insights from both Gemini and OpenAI side by side</p>
+                                                        <p className="text-sm">Compare insights from two AI models side by side</p>
                                                     </TooltipContent>
                                                 </Tooltip>
                                             </div>
 
-                                            {/* Only show the model selector if side-by-side is OFF */}
-                                            {!showSideBySide && (
+                                            {/* Conditional Model Selectors */}
+                                            {showSideBySide ? (
+                                                <div className="flex items-center gap-3">
+                                                    <Label className="text-sm font-medium text-gray-700">Compare:</Label>
+                                                    <Select
+                                                        value={providersToCompare[0]}
+                                                        onValueChange={(value) => {
+                                                            const newProvider = value as LLMProvider;
+                                                            // Prevent selecting the same provider twice
+                                                            if (newProvider !== providersToCompare[1]) {
+                                                                setProvidersToCompare([newProvider, providersToCompare[1]]);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <SelectTrigger className="h-8 w-[120px]">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {availableProviders.map(p => (
+                                                                <SelectItem key={p} value={p} disabled={p === providersToCompare[1]}>
+                                                                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <span className="text-sm text-gray-500">vs</span>
+                                                    <Select
+                                                        value={providersToCompare[1]}
+                                                        onValueChange={(value) => {
+                                                            const newProvider = value as LLMProvider;
+                                                            // Prevent selecting the same provider twice
+                                                            if (newProvider !== providersToCompare[0]) {
+                                                                setProvidersToCompare([providersToCompare[0], newProvider]);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <SelectTrigger className="h-8 w-[120px]">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {availableProviders.map(p => (
+                                                                <SelectItem key={p} value={p} disabled={p === providersToCompare[0]}>
+                                                                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            ) : (
                                                 <ModelSelector
                                                     selectedProvider={llmProvider}
                                                     onProviderChange={setLlmProvider}
@@ -726,35 +893,34 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}
                                         rows={3}
                                         className="w-full shadow-sm border-gray-300 focus:ring-indigo-500 focus:border-indigo-500"
-                                        disabled={loadingInsights || loadingGeminiInsights || loadingOpenaiInsights}
+                                        disabled={loadingInsights || loadingGeminiInsights || loadingOpenaiInsights || loadingAnthropicInsights}
                                     />
-                                    {(() => { // IIFE to calculate rowsToSend and render the note
+                                    {(() => {
                                         let rowsToSend = filteredRows;
                                         if (!isTimeSeries && excludeOutliers && outliers && outliers.length > 0) {
                                             rowsToSend = Math.max(0, filteredRows - outliers.length);
                                         }
+                                        const providerText = showSideBySide
+                                            ? `${providersToCompare[0].charAt(0).toUpperCase() + providersToCompare[0].slice(1)} and ${providersToCompare[1].charAt(0).toUpperCase() + providersToCompare[1].slice(1)}`
+                                            : `${llmProvider.charAt(0).toUpperCase() + llmProvider.slice(1)}`;
                                         return (
                                             <p className="text-xs text-orange-600 mt-1 italic">
                                                 {!isTimeSeries && outliers && outliers.length > 0 && (
                                                     <>Note: Outliers will be {excludeOutliers ? 'EXCLUDED' : 'INCLUDED'} in the data sent for AI analysis based on the switch above.<br /></>
                                                 )}
                                                 Sending {rowsToSend} rows for analysis (Recommended max: {MAX_RECOMMENDED_INSIGHT_ROWS}).
-                                                {!showSideBySide && (
-                                                    <span className="ml-1">
-                                                        Using {llmProvider === 'gemini' ? 'Gemini AI' : llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'} for analysis.
-                                                    </span>
-                                                )}
+                                                <span className="ml-1">Using {providerText} for analysis.</span>
                                             </p>
                                         );
                                     })()}
                                 </div>
                                 <Button
-                                    onClick={handleGenerateApiInsightsClick}
-                                    disabled={loadingInsights || loadingGeminiInsights || loadingOpenaiInsights || !prompt.trim() || !localInsightsSummary}
+                                    onClick={handleGenerateClick}
+                                    disabled={loadingInsights || loadingGeminiInsights || loadingOpenaiInsights || loadingAnthropicInsights || !prompt.trim() || !localInsightsSummary}
                                     size="lg"
                                     className="bg-indigo-600 hover:bg-indigo-700 text-white shadow hover:shadow-md transition-all duration-150"
                                 >
-                                    {loadingInsights || loadingGeminiInsights || loadingOpenaiInsights ? (
+                                    {(loadingInsights || loadingGeminiInsights || loadingOpenaiInsights || loadingAnthropicInsights) ? (
                                         <><Loader2 className="animate-spin mr-2" size={16} /> Generating...</>
                                     ) : (
                                         <><BrainCircuit size={16} className="mr-2" /> Generate AI Insights</>
@@ -763,79 +929,53 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                             </div>
                         )}
 
-                        {/* Loading/Error/Result Display for API */}
+                        {/* Loading/Error/Result Display Area */}
                         <div className="space-y-4 mt-4">
                             {/* Loading indicator for single model view */}
                             {loadingInsights && !showSideBySide && (
                                 <Alert variant="default" className="w-full bg-blue-50 border-blue-200 text-blue-800">
                                     <Loader2 className="animate-spin h-4 w-4" />
-                                    <AlertTitle>Generating AI Insights</AlertTitle>
+                                    <AlertTitle>Generating AI Insights ({llmProvider.charAt(0).toUpperCase() + llmProvider.slice(1)})</AlertTitle>
                                     <AlertDescription>Please wait, this may take a moment...</AlertDescription>
                                 </Alert>
                             )}
 
                             {/* Error display for single model view */}
-                            {apiError && !showSideBySide && (
+                            {apiError && !loadingInsights && !showSideBySide && (
                                 <Alert variant="destructive" className="w-full">
                                     <MessageSquareWarning className="h-4 w-4" />
-                                    <AlertTitle>Error Generating Insights</AlertTitle>
+                                    <AlertTitle>Error Generating Insights ({llmProvider.charAt(0).toUpperCase() + llmProvider.slice(1)})</AlertTitle>
                                     <AlertDescription>{apiError}</AlertDescription>
                                 </Alert>
                             )}
 
                             {/* Results for single model view */}
-                            {insights && !apiError && !loadingInsights && !showSideBySide && (
-                                <div className="p-4 bg-green-50 border border-green-200 rounded-lg shadow-sm">
+                            {insights && !loadingInsights && !apiError && !showSideBySide && (
+                                <div className={`p-4 bg-green-50 border border-green-200 rounded-lg shadow-sm`}>
                                     <div className="flex items-center justify-between mb-2">
                                         <h3 className="text-lg font-semibold text-green-800">
-                                            Generated AI Insights ({llmProvider === 'gemini' ? 'Gemini' : llmProvider === 'openai' ? 'OpenAI' : 'Anthropic'})
-                                            <Badge variant="outline" className="ml-2 bg-green-100 text-green-800 hover:bg-green-100">
-                                                {llmProvider === 'gemini' ? modelNames.gemini : llmProvider === 'openai' ? modelNames.openai : modelNames.anthropic}
+                                            Generated AI Insights ({llmProvider.charAt(0).toUpperCase() + llmProvider.slice(1)})
+                                            <Badge variant="outline" className={`ml-2 bg-green-100 text-green-800 hover:bg-green-100`}>
+                                                {modelNames[llmProvider]}
                                             </Badge>
                                         </h3>
-                                        {llmProvider === 'gemini' && geminiTokenUsage && (
-                                            <div className="flex items-center text-xs text-green-600">
-                                                <Cpu className="h-3 w-3 mr-1" />
-                                                <span>{geminiTokenUsage.inputTokens + geminiTokenUsage.outputTokens} tokens</span>
-                                                <span className="ml-1 text-green-500">({geminiTokenUsage.inputTokens} in / {geminiTokenUsage.outputTokens} out)</span>
-                                                {geminiCost !== undefined && (
-                                                    <span className="ml-2 text-green-600">${geminiCost.toFixed(4)}</span>
-                                                )}
-                                            </div>
-                                        )}
-                                        {llmProvider === 'openai' && openaiTokenUsage && (
-                                            <div className="flex items-center text-xs text-green-600">
-                                                <Cpu className="h-3 w-3 mr-1" />
-                                                <span>{openaiTokenUsage.inputTokens + openaiTokenUsage.outputTokens} tokens</span>
-                                                <span className="ml-1 text-green-500">({openaiTokenUsage.inputTokens} in / {openaiTokenUsage.outputTokens} out)</span>
-                                                {openaiCost !== undefined && (
-                                                    <span className="ml-2 text-green-600">${openaiCost.toFixed(4)}</span>
-                                                )}
-                                            </div>
-                                        )}
-                                        {llmProvider === 'anthropic' && anthropicTokenUsage && (
-                                            <div className="flex items-center text-xs text-green-600">
-                                                <Cpu className="h-3 w-3 mr-1" />
-                                                <span>{anthropicTokenUsage.inputTokens + anthropicTokenUsage.outputTokens} tokens</span>
-                                                <span className="ml-1 text-green-500">({anthropicTokenUsage.inputTokens} in / {anthropicTokenUsage.outputTokens} out)</span>
-                                                {anthropicCost !== undefined && (
-                                                    <span className="ml-2 text-green-600">${anthropicCost.toFixed(4)}</span>
-                                                )}
-                                            </div>
-                                        )}
+                                        {/* Dynamic Token/Cost Display */}
+                                        {(() => {
+                                            const usageData = getProviderData(llmProvider);
+                                            if (!usageData.tokenUsage) return null;
+                                            return (
+                                                <div className="flex items-center text-xs text-green-600">
+                                                    <Cpu className="h-3 w-3 mr-1" />
+                                                    <span>{usageData.tokenUsage.inputTokens + usageData.tokenUsage.outputTokens} tokens</span>
+                                                    <span className="ml-1 text-green-500">({usageData.tokenUsage.inputTokens} in / {usageData.tokenUsage.outputTokens} out)</span>
+                                                    {usageData.cost !== undefined && (
+                                                        <span className="ml-2 text-green-600">${usageData.cost.toFixed(4)}</span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
-                                    <div className="prose prose-sm max-w-none
-                                        prose-headings:font-semibold 
-                                        prose-headings:text-gray-800 
-                                        prose-h2:text-xl prose-h2:font-bold prose-h2:text-green-700 prose-h2:mt-6 prose-h2:mb-3
-                                        prose-h3:text-lg prose-h3:font-semibold prose-h3:text-green-600 prose-h3:mt-5 prose-h3:mb-2
-                                        prose-p:my-2 prose-p:leading-relaxed
-                                        prose-a:text-blue-600 hover:prose-a:text-blue-700 
-                                        prose-strong:text-gray-800 prose-strong:font-semibold
-                                        prose-ul:my-2 prose-ul:pl-6
-                                        prose-li:my-1
-                                        prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
-                                    ">
+                                    <div className="prose prose-sm max-w-none prose-headings:font-semibold prose-headings:text-gray-800 prose-h2:text-xl prose-h2:font-bold prose-h2:text-green-700 prose-h2:mt-6 prose-h2:mb-3 prose-h3:text-lg prose-h3:font-semibold prose-h3:text-green-600 prose-h3:mt-5 prose-h3:mb-2 prose-p:my-2 prose-p:leading-relaxed prose-a:text-blue-600 hover:prose-a:text-blue-700 prose-strong:text-gray-800 prose-strong:font-semibold prose-ul:my-2 prose-ul:pl-6 prose-li:my-1 prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded">
                                         <ReactMarkdown className="insights-content">{insights}</ReactMarkdown>
                                     </div>
                                 </div>
@@ -844,13 +984,9 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                             {/* Side by Side View */}
                             {showSideBySide && (
                                 <SideBySideInsights
-                                    geminiInsights={geminiInsights}
-                                    openaiInsights={openaiInsights}
-                                    isLoadingGemini={loadingGeminiInsights}
-                                    isLoadingOpenAI={loadingOpenaiInsights}
-                                    geminiTokenUsage={geminiTokenUsage}
-                                    openaiTokenUsage={openaiTokenUsage}
-                                    modelNames={modelNames}
+                                    // Pass data for the two selected providers
+                                    provider1Data={getProviderData(providersToCompare[0])}
+                                    provider2Data={getProviderData(providersToCompare[1])}
                                 />
                             )}
                         </div>

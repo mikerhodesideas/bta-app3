@@ -13,12 +13,21 @@ import {
     SortConfigType,
     DataRowType,
     OutlierType,
+    InsightSummaryType,
+    MetricSummaryItem,
+    DimensionSummaryItem
 } from './types';
 import {
     AdMetric,
     AdGroupMetric,
     SearchTermMetric
 } from '@/lib/types';
+
+// Define DataSourceType locally if not imported
+export type DataSourceType = {
+    id: string;
+    name: string;
+};
 
 // Fix EnhancedOutlierType to include the 'row' property from base OutlierType
 interface EnhancedOutlierType extends OutlierType {
@@ -29,22 +38,6 @@ interface EnhancedOutlierType extends OutlierType {
     reason?: string;  // Added to explain why this is an outlier
     mean?: number;    // Mean value for the metric
     stdDev?: number;  // Standard deviation for the metric
-}
-
-// Define DimensionSummaryItem locally
-interface DimensionSummaryItem {
-    name: string;
-    uniqueCount?: number;
-    topValues?: {
-        value: string;
-        count: number;
-        metrics: {
-            cost?: number;
-            clicks?: number;
-            value?: number;
-            conv?: number;
-        };
-    }[];
 }
 
 // Define LocalInsightsSummary locally
@@ -166,7 +159,7 @@ export function useDataInsights() {
     const [filters, setFilters] = useState<FilterType[]>([]);
     const [sortConfig, setSortConfig] = useState<SortConfigType>({ key: '', direction: 'desc' });
     const [insights, setInsights] = useState<string | null>(null);
-    const [localInsightsSummary, setLocalInsightsSummary] = useState<LocalInsightsSummary | null>(null);
+    const [localInsightsSummary, setLocalInsightsSummary] = useState<InsightSummaryType | null>(null);
     const [detectedOutliers, setDetectedOutliers] = useState<EnhancedOutlierType[] | null>(null);
     const [excludeOutliers, setExcludeOutliers] = useState(true);
     const [previewRowCount, setPreviewRowCount] = useState<number>(PREVIEW_ROW_OPTIONS[0]);
