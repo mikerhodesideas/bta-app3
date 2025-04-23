@@ -44,10 +44,10 @@ export const DataSourceFilterSection: React.FC<DataSourceFilterSectionProps> = (
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Step 1: Select Data Source */}
-            <Card className="shadow-sm border border-gray-200">
-                <CardHeader>
-                    <CardTitle className="text-lg font-semibold text-gray-800">
-                        <ListFilter className="inline h-5 w-5 mr-2 text-blue-600" />1. Select Data Source
+            <Card className="shadow-lg ring-1 ring-blue-200">
+                <CardHeader className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 rounded-t-lg">
+                    <CardTitle className="text-lg font-bold flex items-center">
+                        <ListFilter className="h-5 w-5 mr-2" />1. Select Data Source
                     </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -83,21 +83,19 @@ export const DataSourceFilterSection: React.FC<DataSourceFilterSectionProps> = (
             </Card>
 
             {/* Step 2: Filter Data */}
-            <Card className="shadow-sm border border-gray-200">
-                <CardHeader>
-                    <CardTitle className="text-lg font-semibold text-gray-800 flex items-center justify-between">
-                        <span>
-                            <ListFilter className="inline h-5 w-5 mr-2 text-blue-600" />2. Filter Data
-                        </span>
-                        <Button
-                            variant="outline" size="sm"
-                            onClick={addFilter}
-                            disabled={!selectedSource || !columnsAvailable || loading || filters.length >= 5}
-                            title={!selectedSource ? "Select a data source first" : !columnsAvailable ? "No columns available for filtering" : filters.length >= 5 ? "Maximum 5 filters allowed" : "Add a new filter"}
-                        >
-                            Add Filter
-                        </Button>
+            <Card className="shadow-lg ring-1 ring-green-200">
+                <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-4 rounded-t-lg flex items-center justify-between">
+                    <CardTitle className="text-lg font-bold flex items-center">
+                        <ListFilter className="h-5 w-5 mr-2" />2. Filter Data
                     </CardTitle>
+                    <Button
+                        variant="outline" size="sm"
+                        onClick={addFilter}
+                        disabled={!selectedSource || !columnsAvailable || loading || filters.length >= 5}
+                        title={!selectedSource ? "Select a data source first" : !columnsAvailable ? "No columns available for filtering" : filters.length >= 5 ? "Maximum 5 filters allowed" : "Add a new filter"}
+                    >
+                        Add Filter
+                    </Button>
                 </CardHeader>
                 <CardContent className="space-y-2 min-h-[60px]">
                     {/* Active Filter Editor */}

@@ -118,9 +118,11 @@ const QUERIES = {
       campaign.id,
       campaign.name,
       campaign.status,
-      campaign.advertising_channel_type
+      campaign.advertising_channel_type,
+      metrics.cost_micros
     FROM campaign
-    ORDER BY campaign.name
+    WHERE segments.date DURING LAST_30_DAYS
+    ORDER BY metrics.cost_micros DESC
   `,
   
   // Shared list keywords query
@@ -161,7 +163,7 @@ const HEADERS = {
   NEGATIVE_KEYWORD_LISTS: ["List Name", "List ID", "List Type", "Campaign Name", "Campaign ID"],
   CAMPAIGN_NEGATIVES: ["Campaign Name", "Campaign ID", "Criterion ID", "Keyword Text", "Match Type"],
   ADGROUP_NEGATIVES: ["Campaign Name", "Campaign ID", "Ad Group Name", "Ad Group ID", "Criterion ID", "Keyword Text", "Match Type"],
-  CAMPAIGN_STATUS: ["Campaign ID", "Campaign Name", "Status", "Channel Type"],
+  CAMPAIGN_STATUS: ["Campaign ID", "Campaign Name", "Status", "Channel Type", "Cost"],
   SHARED_LIST_KEYWORDS: ["List ID", "Criterion ID", "Keyword Text", "Match Type", "Type"],
   LANDING_PAGES: ["URL", "Impressions", "Clicks", "Cost", "Conversions", "Value", "CTR", "CVR", "CPA", "ROAS"]
 };
@@ -361,11 +363,14 @@ function processCampaignStatus(rows) {
   const data = [];
   while (rows.hasNext()) {
     const row = rows.next();
+    const costMicros = Number(row['metrics.cost_micros'] || 0);
+    const cost = costMicros / 1000000;
     data.push([
       String(row['campaign.id'] || ''),
       String(row['campaign.name'] || ''),
       String(row['campaign.status'] || ''),
-      String(row['campaign.advertising_channel_type'] || '')
+      String(row['campaign.advertising_channel_type'] || ''),
+      cost
     ]);
   }
   return data;
