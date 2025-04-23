@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, Dispatch, SetStateAction } from 'react';
 import { ChevronUp, ChevronDown, AlertTriangle, ArrowUpDown, Activity, BrainCircuit, MessageSquareWarning, Loader2, SearchCheck, ListFilter, Eye, Info, Split, Cpu } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { useDataInsights, PREVIEW_ROW_OPTIONS, DataSourceType } from './useDataInsights';
+import { useDataInsights, PREVIEW_ROW_OPTIONS } from './useDataInsights';
+import type { DataSourceType } from './types';
 import { ModelSelector } from './ModelSelector';
 import { SideBySideInsights, ProviderInsightData } from './SideBySideInsights';
 import type { ColumnType, FilterOperatorType, DataRowType, ChartDataType, InsightSummaryType, OutlierType, SortConfigType, FilterType, MetricSummaryItem, DimensionSummaryItem, DimensionValueSummary } from './types';
@@ -169,6 +170,7 @@ interface UseDataInsightsExtendedReturn {
     geminiTokenUsage: TokenUsage | null;
     openaiTokenUsage: TokenUsage | null;
     anthropicTokenUsage: TokenUsage | null;
+    apiKeyStatuses: { [key in LLMProvider]: boolean | null };
 }
 
 export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = true }) => {
@@ -212,14 +214,14 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
         loadingOpenaiInsights,
         geminiError,
         openaiError,
-        geminiTokenUsage,
-        openaiTokenUsage,
-        anthropicTokenUsage,
-        handleGenerateSideBySideInsights: handleGenerateSideBySideInsightsFromHook,
         anthropicInsights,
         loadingAnthropicInsights,
-        anthropicError
-    } = useDataInsights();
+        anthropicError,
+        handleGenerateSideBySideInsights,
+        geminiTokenUsage,
+        openaiTokenUsage,
+        anthropicTokenUsage
+    } = useDataInsights(); // no assertion needed
 
     // Default values for missing properties
     // const anthropicInsights = null; // Now provided by hook
@@ -357,7 +359,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
     const handleGenerateClick = () => {
         if (showSideBySide) {
             // Call the function from the hook
-            handleGenerateSideBySideInsightsFromHook(prompt, providersToCompare);
+            handleGenerateSideBySideInsights(prompt, providersToCompare);
         } else {
             // Existing logic for single provider
             handleOutlierDecisionAndGenerateApiInsights(prompt);
@@ -422,7 +424,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                     setSelectedSource={setSelectedSource}
                     loading={loading}
                     isGeneratingLocalInsights={isGeneratingLocalInsights}
-                    columnsAvailable={columns.length > 0}
+                    columns={columns}
                     filters={filters}
                     addFilter={addFilter}
                     updateFilter={updateFilter}
@@ -878,6 +880,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 <ModelSelector
                                                     selectedProvider={llmProvider}
                                                     onProviderChange={setLlmProvider}
+                                                    apiKeyStatuses={{ gemini: null, openai: null, anthropic: null }}
                                                 />
                                             )}
                                         </div>

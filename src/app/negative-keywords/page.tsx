@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useSettings } from '@/lib/contexts/SettingsContext'
-import { fetchAllTabsData } from '@/lib/sheetsData'
-import { TabData, CampaignStatus, CampaignNegative, AdGroupNegative, NegativeKeywordList, SharedListKeyword } from '@/lib/types'
+import { TabData, CampaignStatus, CampaignNegative, AdGroupNegative, NegativeKeywordList, SharedListKeyword, AdMetric, AdGroupMetric } from '@/lib/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -22,6 +21,8 @@ import {
 } from "@/components/ui/tooltip"
 import { Info, AlertTriangle, CheckCircle } from "lucide-react"
 import StackedDistributionBar from '@/components/ui/StackedDistributionBar'
+import { useDataStore } from '@/store/dataStore'
+import CampaignNegativeAuditTable, { CampaignNegativeDetail } from '@/components/negative-keywords/CampaignNegativeAuditTable'
 
 interface EnabledCampaign extends CampaignStatus {
     // Add cost later if needed
@@ -69,50 +70,22 @@ const isPotentiallyRiskyBroadMatch = (keywordText: string, matchType: string): b
 
 export default function NegativeKeywordsPage() {
     const { settings } = useSettings()
-    const [tabData, setTabData] = useState<TabData | null>(null)
+    const storeState = useDataStore();
+    const { data: tabData, loading: isLoading, error } = storeState;
     const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null)
-    const [isLoading, setIsLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
     const [campaignMatchTypeFilter, setCampaignMatchTypeFilter] = useState<MatchTypeFilter>('All');
     const [adGroupMatchTypeFilter, setAdGroupMatchTypeFilter] = useState<MatchTypeFilter>('All');
     const [sharedListFilter, setSharedListFilter] = useState<SharedListFilter>('Applied');
     const [rowsToShow, setRowsToShow] = useState<number>(30);
 
-    useEffect(() => {
-        if (!settings.sheetUrl) {
-            setIsLoading(false)
-            setError('Please configure your Google Sheet URL in settings')
-            return
-        }
-
-        async function loadData() {
-            try {
-                setIsLoading(true)
-                setError(null)
-                const data = await fetchAllTabsData(settings.sheetUrl)
-                setTabData(data)
-            } catch (err: any) {
-                console.error('Error fetching data:', err)
-                setError(`Failed to load data: ${err?.message || 'Unknown error'}`)
-            } finally {
-                setIsLoading(false)
-            }
-        }
-
-        loadData()
-    }, [settings.sheetUrl])
-
     // Filter and prepare campaign list
     const enabledCampaigns = useMemo(() => {
         if (!tabData?.campaignStatus) return []
-
-        // Filter for enabled SEARCH campaigns
         const campaigns = tabData.campaignStatus
-            .filter(cs => cs.status === 'ENABLED' && cs.channelType === 'SEARCH') // Add channelType filter
-            .sort((a, b) => a.campaignName.localeCompare(b.campaignName)); // Sort alphabetically for now
-
+            .filter((cs: CampaignStatus) => cs.status === 'ENABLED' && cs.channelType === 'SEARCH')
+            .sort((a: CampaignStatus, b: CampaignStatus) => a.campaignName.localeCompare(b.campaignName));
         return campaigns;
-    }, [tabData])
+    }, [tabData?.campaignStatus])
 
     const filteredLists = useMemo(() => {
         const allListsData = tabData?.negativeKeywordLists || [];
@@ -123,18 +96,18 @@ export default function NegativeKeywordsPage() {
         if (sharedListFilter === 'Applied') {
             if (!selectedCampaignId) return [];
             const applicationsForSelectedCampaign = allListsData.filter(
-                list => list.appliedToCampaignId === selectedCampaignId
+                (list: NegativeKeywordList) => list.appliedToCampaignId === selectedCampaignId
             );
-            const uniqueListIdsForCampaign = new Set(applicationsForSelectedCampaign.map(list => list.listId));
+            const uniqueListIdsForCampaign = new Set(applicationsForSelectedCampaign.map((list: NegativeKeywordList) => list.listId));
             listsToShow = Array.from(uniqueListIdsForCampaign).map(listId => {
-                return allListsData.find(list => list.listId === listId);
-            }).filter(list => list !== undefined) as NegativeKeywordList[];
+                return allListsData.find((list: NegativeKeywordList) => list.listId === listId);
+            }).filter((list): list is NegativeKeywordList => list !== undefined);
 
         } else {
-            const allUniqueListIds = new Set(allListsData.map(list => list.listId));
+            const allUniqueListIds = new Set(allListsData.map((list: NegativeKeywordList) => list.listId));
             listsToShow = Array.from(allUniqueListIds).map(listId => {
-                return allListsData.find(list => list.listId === listId);
-            }).filter(list => list !== undefined) as NegativeKeywordList[];
+                return allListsData.find((list: NegativeKeywordList) => list.listId === listId);
+            }).filter((list): list is NegativeKeywordList => list !== undefined);
         }
 
         listsToShow.sort((a, b) => a.listName.localeCompare(b.listName));
@@ -208,20 +181,20 @@ export default function NegativeKeywordsPage() {
     const enabledSearchCampaigns = useMemo(() => {
         if (!tabData?.campaignStatus) return [];
         return tabData.campaignStatus
-            .filter(cs => cs.status === 'ENABLED' && cs.channelType === 'SEARCH');
-        // Sorting is handled later if needed, or done in display
+            .filter((cs: CampaignStatus) => cs.status === 'ENABLED' && cs.channelType === 'SEARCH');
     }, [tabData?.campaignStatus]);
 
     const allNegativeKeywordLists = useMemo(() => tabData?.negativeKeywordLists || [], [tabData?.negativeKeywordLists]);
     const allSharedKeywords = useMemo(() => tabData?.sharedListKeywords || [], [tabData?.sharedListKeywords]);
     const allCampaignNegatives = useMemo(() => tabData?.campaignNegatives || [], [tabData?.campaignNegatives]);
     const allAdGroupNegatives = useMemo(() => tabData?.adGroupNegatives || [], [tabData?.adGroupNegatives]);
+    const allAdGroupMetrics = useMemo(() => tabData?.adGroups || [], [tabData?.adGroups]);
 
     // --- Account-Wide Audit Calculations --- 
     const accountWideAudit = useMemo(() => {
-        if (selectedCampaignId || !tabData || enabledSearchCampaigns.length === 0) return null;
+        if (selectedCampaignId || !enabledCampaigns || enabledCampaigns.length === 0) return null;
 
-        const enabledSearchIds = new Set(enabledSearchCampaigns.map(c => c.campaignId));
+        const enabledSearchIds = new Set(enabledCampaigns.map(c => c.campaignId));
 
         const relevantCampaignNegs = allCampaignNegatives.filter(neg => enabledSearchIds.has(neg.campaignId));
         const relevantAdGroupNegs = allAdGroupNegatives.filter(neg => enabledSearchIds.has(neg.campaignId));
@@ -243,7 +216,6 @@ export default function NegativeKeywordsPage() {
         const totalRiskyBroad = relevantCampaignNegs.filter(neg => isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType)).length +
             relevantAdGroupNegs.filter(neg => isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType)).length;
 
-        // --- Calculate Account-Wide Shared List Distribution --- 
         const appliedListIds = new Set(
             allNegativeKeywordLists.filter(list => enabledSearchIds.has(list.appliedToCampaignId)).map(list => list.listId)
         );
@@ -254,10 +226,9 @@ export default function NegativeKeywordsPage() {
             }
         });
         const sharedDistribution = calculateDistribution(Array.from(uniqueSharedKeywordsApplied.values()));
-        // --- End Shared List Distribution Calculation --- 
 
         return {
-            totalCampaigns: enabledSearchCampaigns.length,
+            totalCampaigns: enabledCampaigns.length,
             campaignsWithZeroCampaignNegs,
             campaignsWithZeroAdGroupNegs,
             campaignDistribution,
@@ -265,45 +236,95 @@ export default function NegativeKeywordsPage() {
             totalRiskyBroad,
             sharedDistribution,
         }
+    }, [selectedCampaignId, enabledCampaigns, allCampaignNegatives, allAdGroupNegatives, allNegativeKeywordLists, allSharedKeywordsSource]);
 
-    }, [selectedCampaignId, tabData, enabledSearchCampaigns, allCampaignNegatives, allAdGroupNegatives, allNegativeKeywordLists, allSharedKeywordsSource]);
+    // --- Refactored: Calculate detailed campaign data for the table ---
+    const campaignNegativeDetails = useMemo((): CampaignNegativeDetail[] => {
+        if (selectedCampaignId || !enabledCampaigns || enabledCampaigns.length === 0) {
+            return [];
+        }
+
+        const adGroupsByCampaign = new Map<string, Set<string>>();
+        allAdGroupMetrics.forEach((metric: AdGroupMetric) => {
+            if (!adGroupsByCampaign.has(metric.campaignId)) {
+                adGroupsByCampaign.set(metric.campaignId, new Set());
+            }
+            adGroupsByCampaign.get(metric.campaignId)!.add(metric.adGroupId);
+        });
+
+        const details: CampaignNegativeDetail[] = enabledCampaigns
+            .map((campaign: CampaignStatus) => {
+                const campaignId = campaign.campaignId;
+                const cost = campaign.cost || 0;
+
+                if (cost === 0) return null;
+
+                const campaignNegs = allCampaignNegatives.filter((neg: CampaignNegative) => neg.campaignId === campaignId);
+                const uniqueAdGroupIdsInCampaign = adGroupsByCampaign.get(campaignId) || new Set();
+                const adGroupNegsInCampaign = allAdGroupNegatives.filter((neg: AdGroupNegative) => neg.campaignId === campaignId);
+                const appliedLists = new Set(
+                    allNegativeKeywordLists
+                        .filter((list: NegativeKeywordList) => list.appliedToCampaignId === campaignId)
+                        .map((list: NegativeKeywordList) => list.listId)
+                );
+                const adGroupsWithNegatives = new Set(
+                    adGroupNegsInCampaign.map((neg: AdGroupNegative) => neg.adGroupId)
+                );
+
+                return {
+                    campaignId: campaignId,
+                    campaignName: campaign.campaignName,
+                    cost: cost,
+                    listsAppliedCount: appliedLists.size,
+                    campaignNegCount: campaignNegs.length,
+                    adGroupCount: uniqueAdGroupIdsInCampaign.size,
+                    adGroupsWithNegsCount: adGroupsWithNegatives.size,
+                    totalAdGroupNegCount: adGroupNegsInCampaign.length,
+                };
+            })
+            .filter((detail): detail is CampaignNegativeDetail => detail !== null);
+
+        details.sort((a, b) => b.cost - a.cost);
+        return details;
+    }, [
+        selectedCampaignId,
+        enabledCampaigns,
+        allCampaignNegatives,
+        allAdGroupMetrics,
+        allAdGroupNegatives,
+        allNegativeKeywordLists,
+    ]);
 
     // --- Calculate List Application Stats --- 
     const listApplicationStats = useMemo(() => {
-        if (!tabData || enabledSearchCampaigns.length === 0) return null;
-
+        if (!enabledCampaigns || enabledCampaigns.length === 0) return null;
         const appliedListCampaignIds = new Set(
-            allNegativeKeywordLists.map(list => list.appliedToCampaignId)
+            allNegativeKeywordLists.map((list: NegativeKeywordList) => list.appliedToCampaignId)
         );
-
         let campaignsWithoutLists = 0;
-        enabledSearchCampaigns.forEach(campaign => {
+        enabledCampaigns.forEach((campaign: CampaignStatus) => {
             if (!appliedListCampaignIds.has(campaign.campaignId)) {
                 campaignsWithoutLists++;
             }
         });
-
         return { campaignsWithoutLists };
-
-    }, [tabData, enabledSearchCampaigns, allNegativeKeywordLists]);
+    }, [enabledCampaigns, allNegativeKeywordLists]);
 
     // --- Campaign-Specific Audit Calculations --- 
     const campaignSpecificAudit = useMemo(() => {
-        if (!selectedCampaignId || !tabData) return null;
-
-        const campaignNegs = allCampaignNegatives.filter(neg => neg.campaignId === selectedCampaignId);
-        const adGroupNegsRaw = allAdGroupNegatives.filter(neg => neg.campaignId === selectedCampaignId);
-        const appliedListIds = new Set(allNegativeKeywordLists.filter(list => list.appliedToCampaignId === selectedCampaignId).map(list => list.listId));
-        const appliedSharedKeywords = allSharedKeywordsSource.filter(kw => appliedListIds.has(kw.listId));
+        if (!selectedCampaignId) return null;
+        const campaignNegs = allCampaignNegatives.filter((neg: CampaignNegative) => neg.campaignId === selectedCampaignId);
+        const adGroupNegsRaw = allAdGroupNegatives.filter((neg: AdGroupNegative) => neg.campaignId === selectedCampaignId);
+        const appliedListIds = new Set(allNegativeKeywordLists.filter((list: NegativeKeywordList) => list.appliedToCampaignId === selectedCampaignId).map((list: NegativeKeywordList) => list.listId));
+        const appliedSharedKeywords = allSharedKeywordsSource.filter((kw: SharedListKeyword) => appliedListIds.has(kw.listId));
 
         const campaignDistribution = calculateDistribution(campaignNegs);
         const adGroupDistribution = calculateDistribution(adGroupNegsRaw);
         const sharedListKeywordsDistribution = calculateDistribution(appliedSharedKeywords);
 
-        // Calculate risk counts (using raw/unfiltered)
-        const riskyCampaignBroad = campaignNegs.filter(neg => isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType)).length;
-        const riskyAdGroupBroad = adGroupNegsRaw.filter(neg => isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType)).length;
-        const riskySharedBroad = appliedSharedKeywords.filter(kw => isPotentiallyRiskyBroadMatch(kw.keywordText, kw.matchType)).length;
+        const riskyCampaignBroad = campaignNegs.filter((neg: CampaignNegative) => isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType)).length;
+        const riskyAdGroupBroad = adGroupNegsRaw.filter((neg: AdGroupNegative) => isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType)).length;
+        const riskySharedBroad = appliedSharedKeywords.filter((kw: SharedListKeyword) => isPotentiallyRiskyBroadMatch(kw.keywordText, kw.matchType)).length;
 
         return {
             totalCampaignNegs: campaignNegs.length,
@@ -316,51 +337,51 @@ export default function NegativeKeywordsPage() {
             riskyAdGroupBroad,
             riskySharedBroad,
         };
-    }, [selectedCampaignId, tabData, allNegativeKeywordLists, allSharedKeywordsSource, allCampaignNegatives, allAdGroupNegatives]);
+    }, [selectedCampaignId, allNegativeKeywordLists, allSharedKeywordsSource, allCampaignNegatives, allAdGroupNegatives]);
 
     // --- Hooks for Filtered Data for Display (depend on campaignSpecificAudit to know if a campaign is selected) ---
     const filteredListsForDisplay = useMemo(() => {
-        if (!campaignSpecificAudit || !tabData) return []; // Use audit obj existence
+        if (!campaignSpecificAudit) return [];
         const allListsData = allNegativeKeywordLists;
         if (allListsData.length === 0) return [];
         let listsToShow: NegativeKeywordList[] = [];
         if (sharedListFilter === 'Applied') {
-            if (!selectedCampaignId) return []; // Still need campaignId check here for safety
+            if (!selectedCampaignId) return [];
             const applicationsForSelectedCampaign = allListsData.filter(
-                list => list.appliedToCampaignId === selectedCampaignId
+                (list: NegativeKeywordList) => list.appliedToCampaignId === selectedCampaignId
             );
-            const uniqueListIdsForCampaign = new Set(applicationsForSelectedCampaign.map(list => list.listId));
-            listsToShow = Array.from(uniqueListIdsForCampaign).map(listId => {
-                return allListsData.find(list => list.listId === listId);
-            }).filter(list => list !== undefined) as NegativeKeywordList[];
+            const uniqueListIdsForCampaign = new Set(applicationsForSelectedCampaign.map((list: NegativeKeywordList) => list.listId));
+            listsToShow = Array.from(uniqueListIdsForCampaign).map((listId: string) => {
+                return allListsData.find((list: NegativeKeywordList) => list.listId === listId);
+            }).filter((list): list is NegativeKeywordList => list !== undefined);
         } else {
-            const allUniqueListIds = new Set(allListsData.map(list => list.listId));
-            listsToShow = Array.from(allUniqueListIds).map(listId => {
-                return allListsData.find(list => list.listId === listId);
-            }).filter(list => list !== undefined) as NegativeKeywordList[];
+            const allUniqueListIds = new Set(allListsData.map((list: NegativeKeywordList) => list.listId));
+            listsToShow = Array.from(allUniqueListIds).map((listId: string) => {
+                return allListsData.find((list: NegativeKeywordList) => list.listId === listId);
+            }).filter((list): list is NegativeKeywordList => list !== undefined);
         }
         listsToShow.sort((a, b) => a.listName.localeCompare(b.listName));
         return listsToShow;
-    }, [campaignSpecificAudit, selectedCampaignId, allNegativeKeywordLists, sharedListFilter, tabData]);
+    }, [campaignSpecificAudit, selectedCampaignId, allNegativeKeywordLists, sharedListFilter]);
 
     const campaignNegsForDisplay = useMemo(() => {
-        if (!campaignSpecificAudit || !tabData) return []; // Use audit obj existence
-        const campaignNegs = allCampaignNegatives.filter(neg =>
-            neg.campaignId === selectedCampaignId && // Filter strictly by selected campaign
+        if (!campaignSpecificAudit) return [];
+        const campaignNegs = allCampaignNegatives.filter((neg: CampaignNegative) =>
+            neg.campaignId === selectedCampaignId &&
             (campaignMatchTypeFilter === 'All' || neg.matchType === campaignMatchTypeFilter)
         );
         campaignNegs.sort((a, b) => a.keywordText.localeCompare(b.keywordText));
         return campaignNegs;
-    }, [campaignSpecificAudit, selectedCampaignId, allCampaignNegatives, campaignMatchTypeFilter, tabData]);
+    }, [campaignSpecificAudit, selectedCampaignId, allCampaignNegatives, campaignMatchTypeFilter]);
 
     const adGroupNegsGroupedForDisplay = useMemo(() => {
-        if (!campaignSpecificAudit || !tabData) return []; // Use audit obj existence
-        const filtered = allAdGroupNegatives.filter(neg =>
-            neg.campaignId === selectedCampaignId && // Filter strictly by selected campaign
+        if (!campaignSpecificAudit) return [];
+        const filtered = allAdGroupNegatives.filter((neg: AdGroupNegative) =>
+            neg.campaignId === selectedCampaignId &&
             (adGroupMatchTypeFilter === 'All' || neg.matchType === adGroupMatchTypeFilter)
         );
         const grouped = filtered.reduce((acc, neg) => {
-            let group = acc.find(item => item.adGroupName === neg.adGroupName);
+            let group = acc.find((item: { adGroupName: string; adGroupId: string; negatives: AdGroupNegative[] }) => item.adGroupName === neg.adGroupName);
             if (group) {
                 group.negatives.push(neg);
             } else {
@@ -372,11 +393,10 @@ export default function NegativeKeywordsPage() {
         }, [] as { adGroupName: string; adGroupId: string; negatives: AdGroupNegative[] }[]);
         grouped.sort((a, b) => a.adGroupName.localeCompare(b.adGroupName));
         return grouped;
-    }, [campaignSpecificAudit, selectedCampaignId, allAdGroupNegatives, adGroupMatchTypeFilter, tabData]);
+    }, [campaignSpecificAudit, selectedCampaignId, allAdGroupNegatives, adGroupMatchTypeFilter]);
 
     // Calculate total ad group negatives count for display (uses filtered/grouped data)
     const totalFilteredAdGroupNegativesCount = useMemo(() => {
-        // Use the grouped data specifically for display
         return adGroupNegsGroupedForDisplay.reduce((count: number, group) => count + group.negatives.length, 0);
     }, [adGroupNegsGroupedForDisplay]);
 
@@ -386,9 +406,11 @@ export default function NegativeKeywordsPage() {
                 <h1 className="text-3xl font-bold mb-8">Negative Keywords</h1>
 
                 {error ? (
-                    <div className="text-red-500 mb-4">{error}</div>
-                ) : isLoading ? (
+                    <div className="text-red-500 mb-4">Error loading data: {error}</div>
+                ) : isLoading && !Object.values(tabData || {}).some(arr => arr && arr.length > 0) ? (
                     <div>Loading data...</div>
+                ) : !settings.sheetUrl ? (
+                    <div className="text-center text-gray-500 pt-10">Please configure your Google Sheet URL in settings.</div>
                 ) : (
                     <div className="space-y-6">
                         <div className="flex justify-between items-end">
@@ -432,7 +454,6 @@ export default function NegativeKeywordsPage() {
                             </div>
                         </div>
 
-                        {/* --- Account-Wide Audit Display --- */}
                         {!selectedCampaignId && accountWideAudit && (
                             <Card className="mt-6 border-blue-200 border">
                                 <CardHeader className="bg-blue-50">
@@ -443,10 +464,9 @@ export default function NegativeKeywordsPage() {
                                         Overview of negative keyword health across all active search campaigns.
                                     </CardDescription>
                                 </CardHeader>
-                                <CardContent className="text-sm space-y-4">
-                                    {/* Stat Row - Changed back to 3 columns */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-                                        {/* Added Campaigns w/o Lists Applied */}
+                                <CardContent className="text-sm space-y-4 px-4 pb-4 pt-4">
+                                    <CampaignNegativeAuditTable data={campaignNegativeDetails} />
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center pt-4">
                                         {listApplicationStats && (
                                             <div className="p-3 bg-blue-50/50 rounded border border-blue-100">
                                                 <p className="text-xs text-muted-foreground mb-1">Campaigns w/o Lists Applied</p>
@@ -463,9 +483,7 @@ export default function NegativeKeywordsPage() {
                                         </div>
                                     </div>
 
-                                    {/* Distribution Text Row - Back to 3 columns, shared list added */}
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t">
-                                        {/* Shared List Distribution Block */}
                                         <div>
                                             <StackedDistributionBar distribution={accountWideAudit.sharedDistribution} />
                                             <h4 className="font-medium mb-2 text-center text-xs text-muted-foreground">Overall Shared List Distribution</h4>
@@ -498,16 +516,13 @@ export default function NegativeKeywordsPage() {
                             </Card>
                         )}
 
-                        {/* --- Three Column Display (Campaign Specific) --- */}
                         {selectedCampaignId && campaignSpecificAudit && (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                                {/* Shared Lists Card */}
                                 <Card className="col-span-1 flex flex-col border-purple-200 border">
                                     <CardHeader className="pb-2 bg-purple-50">
                                         <CardTitle className="flex justify-between items-center text-lg font-semibold">
                                             <span>Shared Lists</span>
                                             <Select value={sharedListFilter} onValueChange={(v) => setSharedListFilter(v as SharedListFilter)} disabled={!selectedCampaignId && sharedListFilter !== 'All'}>
-                                                {/* Select Trigger/Content */}
                                                 <SelectTrigger className="w-[100px] h-7 text-xs">
                                                     <SelectValue placeholder="Filter" />
                                                 </SelectTrigger>
@@ -517,11 +532,9 @@ export default function NegativeKeywordsPage() {
                                                 </SelectContent>
                                             </Select>
                                         </CardTitle>
-                                        {/* Campaign Specific Shared List Insights */}
                                         <div className="text-xs text-muted-foreground pt-2 border-t mt-2 space-y-1">
                                             <p>Applied Keywords: <span className="font-semibold text-sm">{campaignSpecificAudit.totalAppliedSharedKeywords}</span></p>
                                             <p>Distribution: Exact:<span className="font-semibold">{campaignSpecificAudit.sharedListKeywordsDistribution.EXACT}%</span> Phrase:<span className="font-semibold">{campaignSpecificAudit.sharedListKeywordsDistribution.PHRASE}%</span> Broad:<span className="font-semibold">{campaignSpecificAudit.sharedListKeywordsDistribution.BROAD}%</span></p>
-                                            {/* Placeholder for Stacked Bar */}
                                             <StackedDistributionBar distribution={campaignSpecificAudit.sharedListKeywordsDistribution} />
                                             {campaignSpecificAudit.riskySharedBroad > 0 && (
                                                 <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" /><span className="font-semibold">{campaignSpecificAudit.riskySharedBroad}</span> risky broad match{campaignSpecificAudit.riskySharedBroad !== 1 ? 'es' : ''}</div>
@@ -532,8 +545,8 @@ export default function NegativeKeywordsPage() {
                                         {filteredListsForDisplay.length > 0 ? (
                                             <Accordion type="multiple" className="w-full text-sm">
                                                 {filteredListsForDisplay.slice(0, rowsToShow).map(list => {
-                                                    const keywordsInList = allSharedKeywordsSource.filter(kw => kw.listId === list.listId);
-                                                    keywordsInList.sort((a, b) => a.keywordText.localeCompare(b.keywordText)); // Sort keywords alphabetically
+                                                    const keywordsInList = allSharedKeywordsSource.filter((kw: SharedListKeyword) => kw.listId === list.listId);
+                                                    keywordsInList.sort((a, b) => a.keywordText.localeCompare(b.keywordText));
                                                     return (
                                                         <AccordionItem value={list.listId} key={list.listId}>
                                                             <AccordionTrigger className="text-sm hover:no-underline">
@@ -543,7 +556,7 @@ export default function NegativeKeywordsPage() {
                                                             <AccordionContent>
                                                                 {keywordsInList.length > 0 ? (
                                                                     <div className="space-y-1 pl-4">
-                                                                        {keywordsInList.map(kw => {
+                                                                        {keywordsInList.map((kw: SharedListKeyword) => {
                                                                             const isRisky = isPotentiallyRiskyBroadMatch(kw.keywordText, kw.matchType);
                                                                             return (
                                                                                 <div key={kw.criterionId} className="flex justify-between items-center py-1 border-b last:border-b-0">
@@ -581,14 +594,11 @@ export default function NegativeKeywordsPage() {
                                         )}
                                     </CardContent>
                                 </Card>
-
-                                {/* Campaign Level Negatives Card */}
                                 <Card className="col-span-1 flex flex-col border-teal-200 border">
                                     <CardHeader className="pb-2 bg-teal-50">
                                         <CardTitle className="flex justify-between items-center text-lg font-semibold">
                                             <span>Campaign Level</span>
                                             <Select value={campaignMatchTypeFilter} onValueChange={(v) => setCampaignMatchTypeFilter(v as MatchTypeFilter)} disabled={!selectedCampaignId}>
-                                                {/* Select Trigger/Content */}
                                                 <SelectTrigger className="w-[100px] h-7 text-xs">
                                                     <SelectValue placeholder="Match Type" />
                                                 </SelectTrigger>
@@ -599,11 +609,9 @@ export default function NegativeKeywordsPage() {
                                                 </SelectContent>
                                             </Select>
                                         </CardTitle>
-                                        {/* Campaign Specific Insights */}
                                         <div className="text-xs text-muted-foreground pt-2 border-t mt-2 space-y-1">
                                             <p>Total Negatives: <span className="font-semibold text-sm">{campaignSpecificAudit.totalCampaignNegs}</span></p>
                                             <p>Distribution: Exact:<span className="font-semibold">{campaignSpecificAudit.campaignDistribution.EXACT}%</span> Phrase:<span className="font-semibold">{campaignSpecificAudit.campaignDistribution.PHRASE}%</span> Broad:<span className="font-semibold">{campaignSpecificAudit.campaignDistribution.BROAD}%</span></p>
-                                            {/* Placeholder for Stacked Bar */}
                                             <StackedDistributionBar distribution={campaignSpecificAudit.campaignDistribution} />
                                             {campaignSpecificAudit.riskyCampaignBroad > 0 && (
                                                 <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" /><span className="font-semibold">{campaignSpecificAudit.riskyCampaignBroad}</span> risky broad match{campaignSpecificAudit.riskyCampaignBroad !== 1 ? 'es' : ''}</div>
@@ -643,14 +651,11 @@ export default function NegativeKeywordsPage() {
                                         )}
                                     </CardContent>
                                 </Card>
-
-                                {/* Ad Group Level Negatives Card */}
                                 <Card className="col-span-1 flex flex-col border-amber-200 border">
                                     <CardHeader className="pb-2 bg-amber-50">
                                         <CardTitle className="flex justify-between items-center text-lg font-semibold">
                                             <span>Ad Group Level</span>
                                             <Select value={adGroupMatchTypeFilter} onValueChange={(v) => setAdGroupMatchTypeFilter(v as MatchTypeFilter)} disabled={!selectedCampaignId}>
-                                                {/* Select Trigger/Content */}
                                                 <SelectTrigger className="w-[100px] h-7 text-xs">
                                                     <SelectValue placeholder="Match Type" />
                                                 </SelectTrigger>
@@ -661,11 +666,9 @@ export default function NegativeKeywordsPage() {
                                                 </SelectContent>
                                             </Select>
                                         </CardTitle>
-                                        {/* Campaign Specific Insights */}
                                         <div className="text-xs text-muted-foreground pt-2 border-t mt-2 space-y-1">
                                             <p>Total Keywords: <span className="font-semibold text-sm">{totalFilteredAdGroupNegativesCount}</span> in {adGroupNegsGroupedForDisplay.length} groups with negatives</p>
                                             <p>Distribution: Exact:<span className="font-semibold">{campaignSpecificAudit.adGroupDistribution.EXACT}%</span> Phrase:<span className="font-semibold">{campaignSpecificAudit.adGroupDistribution.PHRASE}%</span> Broad:<span className="font-semibold">{campaignSpecificAudit.adGroupDistribution.BROAD}%</span></p>
-                                            {/* Placeholder for Stacked Bar */}
                                             <StackedDistributionBar distribution={campaignSpecificAudit.adGroupDistribution} />
                                             {campaignSpecificAudit.riskyAdGroupBroad > 0 && (
                                                 <div className="flex items-center text-orange-600"><AlertTriangle size={12} className="mr-1 shrink-0" /><span className="font-semibold">{campaignSpecificAudit.riskyAdGroupBroad}</span> risky broad match{campaignSpecificAudit.riskyAdGroupBroad !== 1 ? 'es' : ''}</div>
@@ -715,10 +718,14 @@ export default function NegativeKeywordsPage() {
                             </div>
                         )}
 
-                        {/* Placeholder when no campaign selected */}
-                        {!selectedCampaignId && !accountWideAudit && !isLoading && (
+                        {!selectedCampaignId && !accountWideAudit && !isLoading && Object.values(tabData || {}).some(arr => arr && arr.length > 0) && (
                             <div className="text-center text-gray-500 pt-10 col-span-3">
                                 <p>Select a campaign above to view its specific negative keywords and insights, or review the account-wide audit.</p>
+                            </div>
+                        )}
+                        {!isLoading && !error && !Object.values(tabData || {}).some(arr => arr && arr.length > 0) && settings.sheetUrl && (
+                            <div className="text-center text-gray-500 pt-10 col-span-3">
+                                <p>No negative keyword data (campaign, ad group, or lists) found in your sheet.</p>
                             </div>
                         )}
 

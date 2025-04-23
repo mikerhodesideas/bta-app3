@@ -2,16 +2,32 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useSettings } from '@/lib/contexts/SettingsContext'
-import { fetchAllTabsData, getCampaigns } from '@/lib/sheetsData'
-import type { AdMetric, DailyMetrics, TabData } from '@/lib/types'
+import type { AdMetric, DailyMetrics, TabData, Campaign } from '@/lib/types'
 import { calculateDailyMetrics } from '@/lib/metrics'
 import { MetricCard } from '@/components/MetricCard'
 import { MetricsChart } from '@/components/MetricsChart'
 import { CampaignSelect } from '@/components/CampaignSelect'
 import { formatCurrency, formatPercent, formatConversions } from '@/lib/utils'
 import { COLORS } from '@/lib/config'
+import { useDataStore } from '@/store/dataStore'
+import { getCampaigns } from '@/lib/sheetsData'
+
+// Helper for basic deep comparison of Campaign arrays
+function areCampaignArraysEqual(arr1?: Campaign[], arr2?: Campaign[]): boolean {
+    if (arr1 === arr2) return true;
+    if (!arr1 || !arr2 || arr1.length !== arr2.length) return false;
+
+    // Create maps for quick lookup (handles different ordering)
+    const map1 = new Map(arr1.map(c => [c.id, c.name]));
+    for (const campaign of arr2) {
+        if (!map1.has(campaign.id) || map1.get(campaign.id) !== campaign.name) {
+            return false;
+        }
+    }
+    return true;
+}
 
 type DisplayMetric = 'impr' | 'clicks' | 'CTR' | 'CPC' | 'cost' |
     'conv' | 'CvR' | 'CPA' | 'value' | 'ROAS'
@@ -31,15 +47,31 @@ const metricConfig = {
 
 export default function DashboardPage() {
     const { settings, setCampaigns } = useSettings()
-    const [data, setData] = useState<AdMetric[]>([])
-    const [isLoading, setIsLoading] = useState(true)
-    const [error, setError] = useState<string>()
+    const isLoading = useDataStore((state) => state.loading)
+    const error = useDataStore((state) => state.error)
+
     const [selectedMetrics, setSelectedMetrics] = useState<[DisplayMetric, DisplayMetric]>(['cost', 'value'])
     const [selectedCampaignId, setSelectedCampaignId] = useState<string>('')
 
-    // Aggregate metrics by date when viewing all campaigns
-    const aggregateMetricsByDate = (data: AdMetric[]): AdMetric[] => {
-        const metricsByDate = data.reduce((acc, metric) => {
+    const dailyData = useDataStore((state) => state.data.daily || []) as AdMetric[]
+
+    const campaignsFromData = useMemo(() => {
+        if (dailyData && dailyData.length > 0) {
+            return getCampaigns(dailyData);
+        }
+        return [];
+    }, [dailyData]);
+
+    useEffect(() => {
+        if (campaignsFromData.length > 0) {
+            if (!areCampaignArraysEqual(settings.campaigns, campaignsFromData)) {
+                setCampaigns(campaignsFromData);
+            }
+        }
+    }, [campaignsFromData, setCampaigns, settings.campaigns]);
+
+    const aggregateMetricsByDate = useCallback((dataToAggregate: AdMetric[]): AdMetric[] => {
+        const metricsByDate = dataToAggregate.reduce((acc, metric) => {
             const date = metric.date
             if (!acc[date]) {
                 acc[date] = {
@@ -64,34 +96,13 @@ export default function DashboardPage() {
         return Object.values(metricsByDate).sort((a, b) =>
             new Date(a.date).getTime() - new Date(b.date).getTime()
         )
-    }
+    }, []);
 
-    useEffect(() => {
-        if (!settings.sheetUrl) {
-            setIsLoading(false)
-            return
-        }
-
-        fetchAllTabsData(settings.sheetUrl)
-            .then((allData: TabData) => {
-                const dailyData = allData.Daily || []
-                setData(dailyData)
-
-                const campaigns = getCampaigns(dailyData)
-                setCampaigns(campaigns)
-            })
-            .catch((err: Error) => {
-                console.error('Error loading data:', err)
-                setError('Failed to load data. Please check your Sheet URL.')
-            })
-            .finally(() => setIsLoading(false))
-    }, [settings.sheetUrl, setCampaigns])
-
-    const dailyMetrics = calculateDailyMetrics(
+    const dailyMetrics = useMemo(() => calculateDailyMetrics(
         selectedCampaignId
-            ? data.filter(d => d.campaignId === selectedCampaignId)
-            : aggregateMetricsByDate(data)
-    )
+            ? dailyData.filter(d => d.campaignId === selectedCampaignId)
+            : aggregateMetricsByDate(dailyData)
+    ), [selectedCampaignId, dailyData, aggregateMetricsByDate])
 
     const calculateTotals = () => {
         if (dailyMetrics.length === 0) return null
@@ -120,15 +131,16 @@ export default function DashboardPage() {
         setSelectedMetrics(prev => [prev[1], metric])
     }
 
-    if (isLoading) return <DashboardLayout>Loading...</DashboardLayout>
+    if (isLoading && dailyData.length === 0) return <DashboardLayout>Loading data...</DashboardLayout>
+    if (error) return <DashboardLayout error={error}>{null}</DashboardLayout>
     if (!settings.sheetUrl) return <DashboardLayout>Please configure your Google Sheet URL in settings</DashboardLayout>
-    if (dailyMetrics.length === 0) return <DashboardLayout>No data found</DashboardLayout>
+    if (!isLoading && dailyData.length === 0 && settings.sheetUrl) return <DashboardLayout>No data found for the &apos;daily&apos; tab in your sheet.</DashboardLayout>
 
     const totals = calculateTotals()
     if (!totals) return null
 
     return (
-        <DashboardLayout error={error}>
+        <DashboardLayout>
             <div className="space-y-6">
                 <CampaignSelect
                     campaigns={settings.campaigns || []}

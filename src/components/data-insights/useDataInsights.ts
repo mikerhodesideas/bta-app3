@@ -3,7 +3,7 @@ import { useSettings } from '@/lib/contexts/SettingsContext';
 import { useDataStore } from '@/store/dataStore';
 import { SHEET_TABS, SheetTab, MAX_RECOMMENDED_INSIGHT_ROWS } from '@/lib/config';
 import { generateInsightsWithProvider } from '@/lib/api-router';
-import { LLMProvider, DEFAULT_PROVIDER, TokenUsage } from '@/lib/types/models';
+import { LLMProvider, DEFAULT_PROVIDER, TokenUsage, LLMResponse } from '@/lib/types/models';
 import { DEFAULT_MODELS } from '@/lib/types/models';
 import {
     DataSourceType,
@@ -23,11 +23,18 @@ import {
     SearchTermMetric
 } from '@/lib/types';
 
-// Define DataSourceType locally if not imported
-export type DataSourceType = {
-    id: string;
-    name: string;
-};
+// Define GenerateInsightsOptions locally based on usage
+interface GenerateInsightsOptions {
+    prompt: string;
+    data: DataRowType[];
+    sourceInfo: {
+        name: string;
+        filters: string;
+        totalRows: number;
+        rowsAnalyzed: number;
+        outlierInfo: string;
+    };
+}
 
 // Fix EnhancedOutlierType to include the 'row' property from base OutlierType
 interface EnhancedOutlierType extends OutlierType {
@@ -219,10 +226,10 @@ export function useDataInsights() {
         // Check if loading is finished and no source is selected yet
         if (!globalLoading && !selectedSource) {
             // Check if we actually have data in the store
-            const searchTermsData = getDataForTab('SearchTerms');
+            const searchTermsData = getDataForTab('searchTerms');
 
             if (searchTermsData && searchTermsData.length > 0) {
-                const defaultSource = dataSources.find(src => src.id === 'SearchTerms');
+                const defaultSource = dataSources.find(src => src.id === 'searchTerms');
                 if (defaultSource) {
                     console.log("[Insights] Data verified, setting default source to SearchTerms with", searchTermsData.length, "rows");
                     setSelectedSource(defaultSource);
@@ -647,7 +654,7 @@ export function useDataInsights() {
             results.forEach((result, index) => {
                 const provider = providers[index];
                 if (result.status === 'fulfilled') {
-                    const { content, tokenUsage, error } = result.value;
+                    const { content, usage, error } = result.value as LLMResponse & { usage?: TokenUsage, error?: string };
                     if (error) {
                         console.error(`[Insights] Error from ${provider}:`, error);
                         if (provider === 'gemini') setGeminiError(error);
@@ -656,13 +663,13 @@ export function useDataInsights() {
                     } else {
                         if (provider === 'gemini') {
                             setGeminiInsights(content);
-                            setGeminiTokenUsage(tokenUsage ?? null);
+                            setGeminiTokenUsage(usage ?? null);
                         } else if (provider === 'openai') {
                             setOpenaiInsights(content);
-                            setOpenaiTokenUsage(tokenUsage ?? null);
+                            setOpenaiTokenUsage(usage ?? null);
                         } else if (provider === 'anthropic') {
                             setAnthropicInsights(content);
-                            setAnthropicTokenUsage(tokenUsage ?? null);
+                            setAnthropicTokenUsage(usage ?? null);
                         }
                     }
                 } else {
@@ -699,8 +706,6 @@ export function useDataInsights() {
         excludeOutliers,
         detectedOutliers,
         isTimeSeries,
-        columns,
-        settings.currency,
         dataForSummary,
         totalRows,
         selectedSource,
@@ -797,7 +802,18 @@ export function useDataInsights() {
         } finally {
             setLoadingInsights(false);
         }
-    }, [filteredAndSortedData, detectedOutliers, selectedSource, filters, excludeOutliers, isTimeSeries, llmProvider, showSideBySide, handleGenerateSideBySideInsights]);
+    }, [
+        filteredAndSortedData,
+        detectedOutliers,
+        selectedSource,
+        filters,
+        excludeOutliers,
+        isTimeSeries,
+        llmProvider,
+        showSideBySide,
+        dataForSummary.length,
+        localInsightsSummary
+    ]);
 
     // Filter/Sort management functions (remain the same)
     const addFilter = useCallback(() => {

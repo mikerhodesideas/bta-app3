@@ -1,9 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import useSWR from 'swr'
+import { useState, useMemo } from 'react'
 import { useSettings } from '@/lib/contexts/SettingsContext'
-import { fetchAllTabsData } from '@/lib/sheetsData'
 import { formatCurrency, formatNumber, formatPercent } from '@/lib/utils'
 import type { SearchTermMetric, TabData } from '@/lib/types'
 import {
@@ -15,6 +13,7 @@ import {
     TableRow,
 } from "@/components/ui/table"
 import { Button } from '@/components/ui/button'
+import { useDataStore } from '@/store/dataStore'
 
 type SortField = keyof SearchTermMetric
 type SortDirection = 'asc' | 'desc'
@@ -24,32 +23,43 @@ export default function TermsPage() {
     const [sortField, setSortField] = useState<SortField>('cost')
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
 
-    const { data: tabsData, error, isLoading } = useSWR<TabData>(
-        settings.sheetUrl,
-        fetchAllTabsData
-    )
+    const globalData = useDataStore((state) => state.data)
+    const isLoading = useDataStore((state) => state.loading)
+    const error = useDataStore((state) => state.error)
+    const getDataForTab = useDataStore((state) => state.getDataForTab)
+
+    const searchTerms = useMemo(() => getDataForTab('searchTerms') as SearchTermMetric[], [getDataForTab])
+    const sortedTerms = useMemo(() => {
+        return [...searchTerms].sort((a, b) => {
+            const aVal = a[sortField]
+            const bVal = b[sortField]
+            const multiplier = sortDirection === 'asc' ? 1 : -1
+            if (typeof aVal === 'number' && typeof bVal === 'number') {
+                return (aVal - bVal) * multiplier
+            }
+            return String(aVal).localeCompare(String(bVal)) * multiplier
+        });
+    }, [searchTerms, sortField, sortDirection]);
 
     if (error) {
         return (
             <div className="p-8 text-center">
-                <div className="text-red-500 mb-4">Error loading data</div>
+                <div className="text-red-500 mb-4">Error loading data: {error}</div>
             </div>
         )
     }
 
-    if (isLoading) {
-        return <div className="p-8 text-center">Loading...</div>
+    if (isLoading && searchTerms.length === 0) {
+        return <div className="p-8 text-center">Loading data...</div>
     }
 
-    const searchTerms = (tabsData?.SearchTerms || []) as SearchTermMetric[]
+    if (!settings.sheetUrl) {
+        return <div className="p-8 text-center">Please configure your Google Sheet URL in settings.</div>
+    }
 
-    // Sort data
-    const sortedTerms = [...searchTerms].sort((a, b) => {
-        const aVal = a[sortField]
-        const bVal = b[sortField]
-        const multiplier = sortDirection === 'asc' ? 1 : -1
-        return (Number(aVal) - Number(bVal)) * multiplier
-    })
+    if (!isLoading && searchTerms.length === 0 && settings.sheetUrl) {
+        return <div className="p-8 text-center">No data found for the &apos;searchTerms&apos; tab in your sheet.</div>
+    }
 
     const handleSort = (field: SortField) => {
         if (field === sortField) {

@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google'
 import { SettingsProvider } from '@/lib/contexts/SettingsContext'
 import { Navigation } from '@/components/Navigation'
 import { Metadata } from 'next'
+import { GlobalDataProvider } from '@/components/providers/GlobalDataProvider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -21,10 +22,12 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <SettingsProvider>
-          <Navigation />
-          <main className="min-h-screen bg-gray-50">
-            {children}
-          </main>
+          <GlobalDataProvider>
+            <Navigation />
+            <main className="min-h-screen bg-gray-50">
+              {children}
+            </main>
+          </GlobalDataProvider>
         </SettingsProvider>
       </body>
     </html>

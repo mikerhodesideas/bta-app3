@@ -46,7 +46,7 @@ export function DashboardPage() {
     )
 
     // Ensure we're only using daily data for the dashboard
-    const adData = (tabsData?.Daily || []) as AdMetric[]
+    const adData = (tabsData?.daily || []) as AdMetric[]
     const campaigns = getCampaigns(adData)
 
     // Initialize with highest spend campaign

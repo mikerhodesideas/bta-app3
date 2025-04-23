@@ -1,4 +1,5 @@
 // src/lib/metrics.ts
+import { isSearchTermMetric } from './types'
 import type { AdMetric, DailyMetrics, SearchTermMetric } from './types'
 
 // Calculate aggregated metrics for daily campaign data
@@ -52,18 +53,12 @@ export function calculateProfit(
   isProfitStrategy: boolean
 ): number {
   const totalValue = data.reduce((sum, d) => {
-    if ('value' in d) {
-      return sum + d.value
-    }
-    return sum + d.conversion_value
+    return sum + d.value;
   }, 0)
 
   const totalCost = data.reduce((sum, d) => sum + d.cost, 0)
   const totalConv = data.reduce((sum, d) => {
-    if ('conv' in d) {
-      return sum + d.conv
-    }
-    return sum + d.conversions
+    return sum + d.conv;
   }, 0)
 
   if (isProfitStrategy) {
@@ -84,8 +79,8 @@ export function calculateDailyProfit(
   isProfitStrategy: boolean
 ): number[] {
   return data.map(d => {
-    const value = 'value' in d ? d.value : d.conversion_value
-    const conv = 'conv' in d ? d.conv : d.conversions
+    const value = d.value;
+    const conv = d.conv;
 
     if (isProfitStrategy) {
       const COGS = conv * costMetric

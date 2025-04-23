@@ -95,7 +95,8 @@ async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[]
         campaignId: String(row['Campaign ID'] || ''),
         campaignName: String(row['Campaign Name'] || ''),
         status: String(row['Status'] || ''),
-        channelType: String(row['Channel Type'] || '')
+        channelType: String(row['Channel Type'] || ''),
+        cost: Number(row['Cost'] || 0)
       }));
     } else if (tab === 'sharedListKeywords') {
       return rawData.map((row: any): SharedListKeyword => ({

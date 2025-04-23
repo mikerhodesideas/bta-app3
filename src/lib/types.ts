@@ -133,6 +133,7 @@ export interface CampaignStatus {
   campaignName: string;
   status: string; // e.g., ENABLED, PAUSED, REMOVED
   channelType: string; // e.g., SEARCH, DISPLAY, SHOPPING
+  cost: number;
 }
 
 // Add new interface for keywords within Shared Lists
@@ -160,15 +161,15 @@ export interface LandingPageMetric {
 
 // Update the TabData type to include the new properties
 export type TabData = {
-  daily: AdMetric[];
-  searchTerms: SearchTermMetric[];
-  adGroups: AdGroupMetric[];
-  negativeKeywordLists: NegativeKeywordList[];
-  campaignNegatives: CampaignNegative[];
-  adGroupNegatives: AdGroupNegative[];
-  campaignStatus: CampaignStatus[];
-  sharedListKeywords: SharedListKeyword[];
-  landingPages: LandingPageMetric[];
+  daily?: AdMetric[];
+  searchTerms?: SearchTermMetric[];
+  adGroups?: AdGroupMetric[];
+  negativeKeywordLists?: NegativeKeywordList[];
+  campaignNegatives?: CampaignNegative[];
+  adGroupNegatives?: AdGroupNegative[];
+  campaignStatus?: CampaignStatus[];
+  sharedListKeywords?: SharedListKeyword[];
+  landingPages?: LandingPageMetric[];
 }
 
 // Type guard for search term data

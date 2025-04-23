@@ -3,7 +3,8 @@ import { fetchAllTabsData } from '@/lib/sheetsData';
 import type { TabData, AdMetric, SearchTermMetric, AdGroupMetric } from '@/lib/types';
 import { SheetTab, SHEET_TABS } from '@/lib/config';
 
-interface DataState {
+// Export the interface
+export interface DataState {
     data: TabData;
     loading: boolean;
     error: string | null;
@@ -22,14 +23,15 @@ export const useDataStore = create<DataState>((set, get) => ({
     lastFetchedUrl: null,
 
     fetchData: async (sheetUrl: string, forceRefresh: boolean = false) => {
-        // Only fetch if loading isn't already in progress
-        // or if it's a force refresh, or if the URL has changed
-        if (get().loading || (!forceRefresh && get().lastFetchedUrl === sheetUrl && Object.values(get().data).some(arr => arr.length > 0))) {
-            console.log('[DataStore] Skipping fetch: Already loading, or data exists for this URL and not forcing refresh.');
+        // Prevent concurrent fetches unless forcing a refresh
+        if (get().loading && !forceRefresh) {
+            console.log('[DataStore] Skipping fetch: Already loading and not forcing refresh.');
             return;
         }
+        // If forcing refresh while loading, allow it to proceed (will reset loading state)
 
         console.log(`[DataStore] Fetching data from ${sheetUrl}. Force refresh: ${forceRefresh}`);
+        // Set loading state (even if forced, to indicate a new fetch is starting)
         set({ loading: true, error: null, lastFetchedUrl: sheetUrl });
         try {
             const fetchedData = await fetchAllTabsData(sheetUrl);
@@ -42,6 +44,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     },
 
     getDataForTab: (tab: SheetTab) => {
+        // Ensure that accessing a non-existent tab returns an empty array
         return get().data[tab] || [];
     },
 }));

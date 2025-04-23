@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSettings } from '@/lib/contexts/SettingsContext'
-import { fetchAllTabsData } from '@/lib/sheetsData'
 import { SHEET_TABS, SheetTab } from '@/lib/config'
 import { TabData } from '@/lib/types'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -10,6 +9,7 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { ArrowUpDown } from 'lucide-react'
+import { useDataStore } from '@/store/dataStore'
 
 const ROW_OPTIONS = [10, 30, 50, 100, 200, 500];
 
@@ -17,37 +17,13 @@ type SortDirection = 'asc' | 'desc';
 
 export default function DataTestPage() {
     const { settings } = useSettings()
-    const [tabData, setTabData] = useState<TabData | null>(null)
+    const tabData = useDataStore((state) => state.data)
+    const isLoading = useDataStore((state) => state.loading)
+    const error = useDataStore((state) => state.error)
     const [selectedTab, setSelectedTab] = useState<SheetTab>('daily')
     const [rowsToShow, setRowsToShow] = useState<number>(10);
-    const [isLoading, setIsLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
     const [sortKey, setSortKey] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-
-    useEffect(() => {
-        if (!settings.sheetUrl) {
-            setIsLoading(false)
-            setError('Please configure your Google Sheet URL in settings')
-            return
-        }
-
-        async function loadData() {
-            try {
-                setIsLoading(true)
-                setError(null)
-                const data = await fetchAllTabsData(settings.sheetUrl)
-                setTabData(data)
-            } catch (err: any) {
-                console.error('Error fetching data:', err)
-                setError(`Failed to load data: ${err?.message || 'Unknown error'}`)
-            } finally {
-                setIsLoading(false)
-            }
-        }
-
-        loadData()
-    }, [settings.sheetUrl])
 
     useEffect(() => {
         setSortKey(null);
@@ -86,24 +62,31 @@ export default function DataTestPage() {
             const aValue = a[sortKey as keyof typeof a];
             const bValue = b[sortKey as keyof typeof b];
 
-            if (aValue < bValue) {
-                return sortDirection === 'asc' ? -1 : 1;
+            if (aValue == null && bValue == null) return 0;
+            if (aValue == null) return sortDirection === 'asc' ? 1 : -1;
+            if (bValue == null) return sortDirection === 'asc' ? -1 : 1;
+
+            if (typeof aValue === 'number' && typeof bValue === 'number') {
+                return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
             }
-            if (aValue > bValue) {
-                return sortDirection === 'asc' ? 1 : -1;
-            }
-            return 0;
+            return sortDirection === 'asc'
+                ? String(aValue).localeCompare(String(bValue))
+                : String(bValue).localeCompare(String(aValue));
         });
     }, [sortKey, sortDirection, getSelectedTabData]);
+
+    const hasAnyData = useMemo(() => Object.values(tabData || {}).some(arr => arr && arr.length > 0), [tabData]);
 
     return (
         <div className="container mx-auto px-4 py-12 mt-16">
             <h1 className="text-3xl font-bold mb-8">Data Testing Page</h1>
 
             {error ? (
-                <div className="text-red-500 mb-4">{error}</div>
-            ) : isLoading ? (
-                <div>Loading...</div>
+                <div className="text-red-500 mb-4">Error loading data: {error}</div>
+            ) : isLoading && !hasAnyData ? (
+                <div>Loading data...</div>
+            ) : !settings.sheetUrl ? (
+                <div className="text-center text-gray-500 pt-10">Please configure your Google Sheet URL in settings.</div>
             ) : (
                 <div className="space-y-6">
                     <div className="flex space-x-4 items-end">
@@ -180,7 +163,7 @@ export default function DataTestPage() {
                                 </table>
                             </div>
                         ) : (
-                            <p>No data available for this tab</p>
+                            !isLoading && settings.sheetUrl && <p>No data available for the &apos;{selectedTab}&apos; tab.</p>
                         )}
                     </Card>
                 </div>
