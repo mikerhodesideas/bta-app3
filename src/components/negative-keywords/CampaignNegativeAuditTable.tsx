@@ -1,3 +1,4 @@
+// src/components/negative-keywords/CampaignNegativeAuditTable.tsx
 import React from 'react';
 import {
     Table,
@@ -27,10 +28,6 @@ interface CampaignNegativeAuditTableProps {
 
 const CampaignNegativeAuditTable: React.FC<CampaignNegativeAuditTableProps> = ({ data }) => {
     const { settings } = useSettings();
-
-    if (!data || data.length === 0) {
-        return <p className="text-sm text-muted-foreground italic text-center py-4">No campaign data with cost available for this audit.</p>;
-    }
 
     return (
         <div className="overflow-x-auto mt-4 mb-4 border rounded-md">

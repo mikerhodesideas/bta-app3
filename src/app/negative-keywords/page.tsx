@@ -257,8 +257,6 @@ export default function NegativeKeywordsPage() {
                 const campaignId = campaign.campaignId;
                 const cost = campaign.cost || 0;
 
-                if (cost === 0) return null;
-
                 const campaignNegs = allCampaignNegatives.filter((neg: CampaignNegative) => neg.campaignId === campaignId);
                 const uniqueAdGroupIdsInCampaign = adGroupsByCampaign.get(campaignId) || new Set();
                 const adGroupNegsInCampaign = allAdGroupNegatives.filter((neg: AdGroupNegative) => neg.campaignId === campaignId);
