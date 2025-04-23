@@ -91,13 +91,17 @@ async function fetchTabData(sheetUrl: string, tab: SheetTab): Promise<AdMetric[]
         matchType: String(row['Match Type'] || '')
       }))
     } else if (tab === 'campaignStatus') {
-      return rawData.map((row: any): CampaignStatus => ({
-        campaignId: String(row['Campaign ID'] || ''),
-        campaignName: String(row['Campaign Name'] || ''),
-        status: String(row['Status'] || ''),
-        channelType: String(row['Channel Type'] || ''),
-        cost: Number(row['Cost'] || 0)
-      }));
+      return rawData.map((row: any): CampaignStatus => {
+        // Support both 'Cost' and 'Total Cost' header keys
+        const rawCost = row['Cost'] ?? row['cost'] ?? row['Total Cost'] ?? row['totalCost'] ?? 0; // should be Cost
+        return {
+          campaignId: String(row['Campaign ID'] || ''),
+          campaignName: String(row['Campaign Name'] || ''),
+          status: String(row['Status'] || ''),
+          channelType: String(row['Channel Type'] || ''),
+          cost: Number(rawCost)
+        };
+      });
     } else if (tab === 'sharedListKeywords') {
       return rawData.map((row: any): SharedListKeyword => ({
         listId: String(row['List ID'] || ''),
