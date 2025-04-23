@@ -1,3 +1,4 @@
+// src/app/negative-keywords/page.tsx
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
@@ -33,7 +34,6 @@ const matchTypeOptions: MatchTypeFilter[] = ['All', 'BROAD', 'PHRASE', 'EXACT'];
 
 type SharedListFilter = 'Applied' | 'All';
 const sharedListOptions: SharedListFilter[] = ['Applied', 'All'];
-const rowCountOptions = [10, 30, 50, 100];
 
 // Helper function for badge variants
 const getMatchTypeVariant = (matchType: string): "matchExact" | "matchPhrase" | "matchBroad" | "outline" => {
@@ -76,7 +76,6 @@ export default function NegativeKeywordsPage() {
     const [campaignMatchTypeFilter, setCampaignMatchTypeFilter] = useState<MatchTypeFilter>('All');
     const [adGroupMatchTypeFilter, setAdGroupMatchTypeFilter] = useState<MatchTypeFilter>('All');
     const [sharedListFilter, setSharedListFilter] = useState<SharedListFilter>('Applied');
-    const [rowsToShow, setRowsToShow] = useState<number>(30);
 
     // Filter and prepare campaign list
     const enabledCampaigns = useMemo(() => {
@@ -437,19 +436,6 @@ export default function NegativeKeywordsPage() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div>
-                                <Label htmlFor="rows-select" className="block text-sm font-medium mb-2">Items per Section</Label>
-                                <Select value={String(rowsToShow)} onValueChange={(value) => setRowsToShow(Number(value))}>
-                                    <SelectTrigger id="rows-select" className="w-[100px]">
-                                        <SelectValue placeholder="Rows" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {rowCountOptions.map((option) => (
-                                            <SelectItem key={option} value={String(option)}>{option}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
                         </div>
 
                         {!selectedCampaignId && accountWideAudit && (
@@ -542,7 +528,7 @@ export default function NegativeKeywordsPage() {
                                     <CardContent className="pt-2 flex-grow">
                                         {filteredListsForDisplay.length > 0 ? (
                                             <Accordion type="multiple" className="w-full text-sm">
-                                                {filteredListsForDisplay.slice(0, rowsToShow).map(list => {
+                                                {filteredListsForDisplay.map(list => {
                                                     const keywordsInList = allSharedKeywordsSource.filter((kw: SharedListKeyword) => kw.listId === list.listId);
                                                     keywordsInList.sort((a, b) => a.keywordText.localeCompare(b.keywordText));
                                                     return (
@@ -619,7 +605,7 @@ export default function NegativeKeywordsPage() {
                                     <CardContent className="pt-2 flex-grow overflow-y-auto">
                                         {campaignNegsForDisplay.length > 0 ? (
                                             <div className="space-y-1 text-sm">
-                                                {campaignNegsForDisplay.slice(0, rowsToShow).map((neg: CampaignNegative, index: number) => {
+                                                {campaignNegsForDisplay.map((neg: CampaignNegative, index: number) => {
                                                     const isRisky = isPotentiallyRiskyBroadMatch(neg.keywordText, neg.matchType);
                                                     return (
                                                         <div key={neg.criterionId || index} className="flex justify-between items-center py-1 border-b last:border-b-0">
@@ -640,9 +626,6 @@ export default function NegativeKeywordsPage() {
                                                         </div>
                                                     );
                                                 })}
-                                                {campaignNegsForDisplay.length > rowsToShow && (
-                                                    <p className="text-xs text-center text-gray-400 pt-2">... and {campaignNegsForDisplay.length - rowsToShow} more</p>
-                                                )}
                                             </div>
                                         ) : (
                                             <p className="text-sm text-gray-500 italic">No campaign level negatives found{campaignMatchTypeFilter !== 'All' ? ` for ${campaignMatchTypeFilter} match type` : ' for this campaign'}.</p>
@@ -676,7 +659,7 @@ export default function NegativeKeywordsPage() {
                                     <CardContent className="pt-2 flex-grow overflow-y-auto">
                                         {adGroupNegsGroupedForDisplay.length > 0 ? (
                                             <div className="space-y-3 text-sm">
-                                                {adGroupNegsGroupedForDisplay.slice(0, rowsToShow).map(group => (
+                                                {adGroupNegsGroupedForDisplay.map(group => (
                                                     <div key={group.adGroupId}>
                                                         <strong className="block mb-1 font-medium text-gray-700">{group.adGroupName}</strong>
                                                         <div className="pl-4 space-y-1">
@@ -704,9 +687,6 @@ export default function NegativeKeywordsPage() {
                                                         </div>
                                                     </div>
                                                 ))}
-                                                {adGroupNegsGroupedForDisplay.length > rowsToShow && (
-                                                    <p className="text-xs text-center text-gray-400 pt-2">... and {adGroupNegsGroupedForDisplay.length - rowsToShow} more groups</p>
-                                                )}
                                             </div>
                                         ) : (
                                             <p className="text-sm text-gray-500 italic">No ad group level negatives found{adGroupMatchTypeFilter !== 'All' ? ` for ${adGroupMatchTypeFilter} match type` : ' for this campaign'}.</p>

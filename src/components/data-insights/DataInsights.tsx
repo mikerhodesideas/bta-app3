@@ -223,6 +223,19 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
         anthropicTokenUsage
     } = useDataInsights(); // no assertion needed
 
+    // Truncate environment API keys to first 15 characters for status display
+    const apiKeyStatuses = {
+        gemini: process.env.NEXT_PUBLIC_GEMINI_API_KEY
+            ? process.env.NEXT_PUBLIC_GEMINI_API_KEY.slice(0, 15)
+            : null,
+        openai: process.env.NEXT_PUBLIC_OPENAI_API_KEY
+            ? process.env.NEXT_PUBLIC_OPENAI_API_KEY.slice(0, 15)
+            : null,
+        anthropic: process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY
+            ? process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY.slice(0, 15)
+            : null,
+    };
+
     // Default values for missing properties
     // const anthropicInsights = null; // Now provided by hook
     // const loadingAnthropicInsights = false; // Now provided by hook
@@ -795,8 +808,16 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                 {/* Step 5: Generate AI Insights */}
                 {localInsightsSummary && !isGeneratingLocalInsights && selectedSource && !loading && !apiError && columnsAvailable && (
                     <div className="space-y-6 p-6 border rounded-lg shadow-sm bg-white">
-                        <h2 className="text-xl font-semibold text-gray-800"><BrainCircuit className="inline h-5 w-5 mr-2 text-indigo-600" />5. Generate AI Insights</h2>
-
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-xl font-semibold text-gray-800"><BrainCircuit className="inline h-5 w-5 mr-2 text-indigo-600" />5. Generate AI Insights</h2>
+                            {!showSideBySide && (
+                                <ModelSelector
+                                    selectedProvider={llmProvider}
+                                    onProviderChange={setLlmProvider}
+                                    apiKeyStatuses={apiKeyStatuses}
+                                />
+                            )}
+                        </div>
                         <Separator className="my-0" />
 
                         {/* Prompt & Generate Button Area */}
@@ -828,8 +849,8 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 </Tooltip>
                                             </div>
 
-                                            {/* Conditional Model Selectors */}
-                                            {showSideBySide ? (
+                                            {/* Conditional Model Selectors: only show comparison selectors if side by side */}
+                                            {showSideBySide && (
                                                 <div className="flex items-center gap-3">
                                                     <Label className="text-sm font-medium text-gray-700">Compare:</Label>
                                                     <Select
@@ -876,12 +897,6 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
-                                            ) : (
-                                                <ModelSelector
-                                                    selectedProvider={llmProvider}
-                                                    onProviderChange={setLlmProvider}
-                                                    apiKeyStatuses={{ gemini: null, openai: null, anthropic: null }}
-                                                />
                                             )}
                                         </div>
                                     </div>
