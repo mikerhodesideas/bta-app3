@@ -1,4 +1,4 @@
-const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1kmUOe13stAsXwGQ30AIOPWiP8w-9EmS3iLU6QaDXY0g/';
+const SHEET_URL = '';
 const TABS = {
   SEARCH_TERMS: 'SearchTerms',
   DAILY: 'Daily',
