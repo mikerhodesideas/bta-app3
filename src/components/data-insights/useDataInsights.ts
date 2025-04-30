@@ -20,7 +20,10 @@ import {
 import {
     AdMetric,
     AdGroupMetric,
-    SearchTermMetric
+    SearchTermMetric,
+    isAdMetric,
+    isSearchTermMetric,
+    isAdGroupMetric
 } from '@/lib/types';
 
 // Define GenerateInsightsOptions locally based on usage
@@ -70,21 +73,26 @@ const deriveColumnsFromData = (data: DataRowType[]): ColumnType[] => {
     // Define the order of metrics as per Google Ads
     const metricOrder = ['impr', 'clicks', 'cost', 'conv', 'value', 'cpc', 'ctr', 'convrate', 'cpa', 'roas'];
 
-    // First pass to get all columns and their types
+    // First pass to get all columns and their types from DataRowType
     const columnMap = new Map<string, ColumnType>();
     Object.keys(firstRow).forEach(key => {
-        // Skip the isOutlier field
-        if (key === 'isOutlier') return;
+        if (key === 'isOutlier') return; // Skip internal state
 
         const value = firstRow[key as keyof typeof firstRow];
         const lowerKey = key.toLowerCase();
         let type: 'date' | 'metric' | 'dimension' = 'dimension';
 
-        if (lowerKey === 'date' || lowerKey.endsWith('date') || lowerKey.startsWith('date')) {
+        // Use typeof check on potentially converted data
+        if (value instanceof Date) {
             type = 'date';
-        } else if (typeof value === 'number' || metricOrder.includes(lowerKey)) {
+        } else if (typeof value === 'number') {
+            type = 'metric';
+        } else if (lowerKey === 'date') { // Fallback for unconverted date strings? Should ideally be Date objects now
+            type = 'date';
+        } else if (metricOrder.includes(lowerKey)) { // Check known metric names
             type = 'metric';
         }
+        // Otherwise, default to dimension
 
         columnMap.set(key, {
             field: key,
@@ -93,19 +101,13 @@ const deriveColumnsFromData = (data: DataRowType[]): ColumnType[] => {
         });
     });
 
-    // Sort metrics according to the defined order, keep other columns as is
+    // Sorting logic (remains the same)
     const metrics: ColumnType[] = [];
     const otherColumns: ColumnType[] = [];
-
     columnMap.forEach(column => {
-        if (column.type === 'metric') {
-            metrics.push(column);
-        } else {
-            otherColumns.push(column);
-        }
+        if (column.type === 'metric') metrics.push(column);
+        else otherColumns.push(column);
     });
-
-    // Sort metrics based on the predefined order
     metrics.sort((a, b) => {
         const aIndex = metricOrder.indexOf(a.field.toLowerCase());
         const bIndex = metricOrder.indexOf(b.field.toLowerCase());
@@ -115,7 +117,61 @@ const deriveColumnsFromData = (data: DataRowType[]): ColumnType[] => {
         return aIndex - bIndex;
     });
 
-    // Return dimensions first, then dates, then metrics in the correct order
+    return [
+        ...otherColumns.filter(col => col.type === 'dimension'),
+        ...otherColumns.filter(col => col.type === 'date'),
+        ...metrics
+    ];
+};
+
+// New helper function to derive initial columns directly from RAW data types
+const deriveInitialColumnsFromRawData = (rawData: (AdMetric | SearchTermMetric | AdGroupMetric)[]): ColumnType[] => {
+    if (!rawData || rawData.length === 0) return [];
+    const firstRow = rawData[0]; // Assuming structure is consistent within the array
+
+    const metricOrder = ['impr', 'clicks', 'cost', 'conv', 'value', 'cpc', 'ctr', 'convrate', 'cpa', 'roas']; // Use lowercase for matching
+    const columnMap = new Map<string, ColumnType>();
+
+    Object.keys(firstRow).forEach(key => {
+        const value = firstRow[key as keyof typeof firstRow];
+        const lowerKey = key.toLowerCase();
+        let type: 'date' | 'metric' | 'dimension' = 'dimension';
+
+        // Type inference based on key name and value type from RAW data
+        if (lowerKey === 'date' || lowerKey.endsWith('date') || lowerKey.startsWith('date')) {
+            type = 'date';
+        } else if (typeof value === 'number' || metricOrder.includes(lowerKey)) {
+            type = 'metric';
+        }
+        // Refine dimension checks if needed (e.g., campaignId, adGroupId)
+        if (['campaign', 'campaignid', 'adgroup', 'adgroupid', 'searchterm', 'url'].includes(lowerKey)) {
+            type = 'dimension';
+        }
+
+
+        columnMap.set(key, {
+            field: key,
+            name: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+            type: type
+        });
+    });
+
+    // Sorting logic (same as deriveColumnsFromData)
+    const metrics: ColumnType[] = [];
+    const otherColumns: ColumnType[] = [];
+    columnMap.forEach(column => {
+        if (column.type === 'metric') metrics.push(column);
+        else otherColumns.push(column);
+    });
+    metrics.sort((a, b) => {
+        const aIndex = metricOrder.indexOf(a.field.toLowerCase());
+        const bIndex = metricOrder.indexOf(b.field.toLowerCase());
+        if (aIndex === -1 && bIndex === -1) return a.field.localeCompare(b.field);
+        if (aIndex === -1) return 1;
+        if (bIndex === -1) return -1;
+        return aIndex - bIndex;
+    });
+
     return [
         ...otherColumns.filter(col => col.type === 'dimension'),
         ...otherColumns.filter(col => col.type === 'date'),
@@ -131,21 +187,28 @@ const convertToDataRows = (rawData: (AdMetric | SearchTermMetric | AdGroupMetric
             const rawValue = row[col.field as keyof typeof row];
             if (col.type === 'date' && typeof rawValue === 'string') {
                 try {
+                    // Attempt to parse standard date formats
                     const dateValue = new Date(rawValue);
+                    // Check if parsing was successful (beware of invalid dates returning Date objects)
                     dataRow[col.field] = !isNaN(dateValue.getTime()) ? dateValue : rawValue;
                 } catch {
-                    dataRow[col.field] = rawValue;
+                    dataRow[col.field] = rawValue; // Fallback if Date constructor throws
                 }
-            } else if (col.type === 'metric' && typeof rawValue === 'string') {
+            } else if (col.type === 'metric' && typeof rawValue !== 'number') {
+                // Attempt conversion only if it's not already a number
                 const numValue = Number(rawValue);
-                dataRow[col.field] = !isNaN(numValue) && isFinite(numValue) ? numValue : rawValue;
+                dataRow[col.field] = !isNaN(numValue) && isFinite(numValue) ? numValue : rawValue; // Assign number or original value
             } else {
+                // Assign directly if it's already the correct type or not date/metric
                 dataRow[col.field] = rawValue;
             }
         });
         return dataRow as DataRowType;
     });
 };
+
+// Define which tabs this hook supports
+const SUPPORTED_INSIGHT_TABS: SheetTab[] = ['daily', 'searchTerms', 'adGroups'];
 
 export function useDataInsights() {
     const { settings } = useSettings();
@@ -174,7 +237,6 @@ export function useDataInsights() {
     const [apiError, setApiError] = useState<string | null>(null);
     const [rowCountWarning, setRowCountWarning] = useState<string | null>(null);
     const [isTimeSeries, setIsTimeSeries] = useState(false);
-    // LLM provider state
     const [llmProvider, setLlmProvider] = useState<LLMProvider>(DEFAULT_PROVIDER);
 
     // Side by side state
@@ -185,7 +247,6 @@ export function useDataInsights() {
     const [loadingOpenaiInsights, setLoadingOpenaiInsights] = useState<boolean>(false);
     const [geminiError, setGeminiError] = useState<string | null>(null);
     const [openaiError, setOpenaiError] = useState<string | null>(null);
-    // Add state for Anthropic side-by-side
     const [anthropicInsights, setAnthropicInsights] = useState<string | null>(null);
     const [loadingAnthropicInsights, setLoadingAnthropicInsights] = useState<boolean>(false);
     const [anthropicError, setAnthropicError] = useState<string | null>(null);
@@ -197,6 +258,8 @@ export function useDataInsights() {
 
     const resetState = useCallback((resetFiltersAndColumns = true) => {
         if (resetFiltersAndColumns) {
+            // Don't reset columns here, useEffect will handle it
+            // setColumns([]);
             setFilters([]);
         }
         setInsights(null);
@@ -242,79 +305,126 @@ export function useDataInsights() {
 
     // --- Derived State from Store ---
     const rawDataForSelectedTab = useMemo(() => {
-        // Cache the result of getDataForTab to avoid infinite loop
-        if (!selectedSource) return [];
-        const cachedData = getDataForTab(selectedSource.id as SheetTab);
+        if (!selectedSource) return undefined; // Return undefined if no source
+        const currentDataKey = selectedSource.id as SheetTab;
+        try {
+            // This now returns PossibleTabData (union type)
+            const data = getDataForTab(currentDataKey);
+            console.log(`[Insights] Retrieved ${data?.length ?? 0} rows for ${currentDataKey}`);
+            return data;
+        } catch (error) {
+            console.error(`[Insights] Error retrieving data for tab ${currentDataKey}:`, error);
+            return undefined; // Return undefined on error
+        }
+    }, [selectedSource, getDataForTab]); // getDataForTab can be dependency if store guarantees stability
 
-        // Add debug logging
-        console.log(`[Insights] Retrieved ${cachedData.length} rows for ${selectedSource.id}`);
+    // Effect to derive columns based on selected source and raw data
+    useEffect(() => {
+        const currentDataKey = selectedSource?.id as SheetTab | undefined;
 
-        return [...cachedData]; // Return a new copy to avoid reference issues
-    }, [selectedSource, getDataForTab]);
+        // Clear columns immediately if source is removed
+        if (!currentDataKey) {
+            console.log("[Insights] No source selected, clearing columns.");
+            setColumns([]);
+            setIsTimeSeries(false);
+            resetState(true); // Reset filters too
+            return;
+        }
 
-    // Derive Columns based on the *first row* of raw data if available
-    // This needs to happen *before* converting all rows, but only needs the structure
-    const derivedColumns = useMemo(() => {
-        if (rawDataForSelectedTab.length > 0) {
-            // Create a temporary DataRowType from the first raw item just for structure analysis
-            const tempCols = Object.keys(rawDataForSelectedTab[0]).map(key => ({
-                field: key,
-                name: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
-                type: 'dimension' as 'dimension' | 'metric' | 'date' // Placeholder type
-            }));
-            const firstDataRow = convertToDataRows([rawDataForSelectedTab[0]], tempCols)[0];
-            return deriveColumnsFromData([firstDataRow]);
+        // Only proceed if rawData is available (not undefined)
+        if (rawDataForSelectedTab !== undefined) {
+            console.log(`[Insights] Processing column derivation for ${currentDataKey}`);
+            // Reset insights/filters etc. when data/source changes, but not columns yet
+            resetState(false);
+
+            // Check if the selected tab is supported
+            if (SUPPORTED_INSIGHT_TABS.includes(currentDataKey)) {
+                if (rawDataForSelectedTab.length > 0) {
+                    const firstRow = rawDataForSelectedTab[0];
+                    // Type guard check - ensures the data array matches the expected type for the tab
+                    if (
+                        (currentDataKey === 'daily' && isAdMetric(firstRow)) ||
+                        (currentDataKey === 'searchTerms' && isSearchTermMetric(firstRow)) ||
+                        (currentDataKey === 'adGroups' && isAdGroupMetric(firstRow))
+                    ) {
+                        // Cast to the union type we know it is safe to use with helpers
+                        const validRawData = rawDataForSelectedTab as (AdMetric[] | SearchTermMetric[] | AdGroupMetric[]);
+
+                        // 1. Derive initial columns directly from raw data structure
+                        const initialCols = deriveInitialColumnsFromRawData(validRawData);
+
+                        if (initialCols.length > 0) {
+                            // 2. Convert raw data rows using initial columns
+                            const convertedRows = convertToDataRows(validRawData, initialCols);
+
+                            if (convertedRows.length > 0) {
+                                // 3. Derive final columns from the fully converted DataRowType[]
+                                const finalColumns = deriveColumnsFromData(convertedRows);
+                                console.log("[Insights] Setting final columns:", finalColumns.map(c => c.field));
+                                setColumns(finalColumns);
+                                setIsTimeSeries(!!finalColumns.find(col => col.type === 'date'));
+                                return; // Success
+                            } else {
+                                console.warn(`[Insights] convertToDataRows returned empty for ${currentDataKey}`);
+                            }
+                        } else {
+                            console.warn(`[Insights] deriveInitialColumnsFromRawData returned empty for ${currentDataKey}`);
+                        }
+                    } else {
+                        console.warn(`[Insights] Data type mismatch for tab ${currentDataKey}. Expected AdMetric/SearchTermMetric/AdGroupMetric based on tab name, but first row didn't match type guard. First row:`, firstRow);
+                    }
+                } else {
+                    console.log(`[Insights] Tab ${currentDataKey} is supported but has no data.`);
+                    // Set empty columns for supported but empty tab
+                    setColumns([]);
+                    setIsTimeSeries(false);
+                    return; // Processed (empty data)
+                }
+            } else {
+                console.log(`[Insights] Tab ${currentDataKey} is not supported for insights.`);
+            }
         } else {
+            // rawDataForSelectedTab is undefined (still loading perhaps, or error)
+            console.log("[Insights] Raw data is undefined for", currentDataKey, "- waiting or error occurred.");
+        }
+
+        // Default case: Reset columns if unsupported, error, no data, or loading raw data
+        console.log(`[Insights] Resetting columns due to unsupported tab, error, or missing data for ${currentDataKey}.`);
+        setColumns([]);
+        setIsTimeSeries(false);
+
+    }, [selectedSource, rawDataForSelectedTab, resetState]); // Effect Dependencies
+
+    // --- Base Processed Data (Converted & Filtered, before sorting/outlier exclusion) ---
+    const baseProcessedData = useMemo(() => {
+        // Ensure columns are available before proceeding
+        if (!columns || columns.length === 0 || !rawDataForSelectedTab) {
             return [];
         }
-    }, [rawDataForSelectedTab]);
 
-    // Update state columns when derivedColumns change
-    useEffect(() => {
-        setColumns(derivedColumns);
-        const firstSortable = derivedColumns.find(c => c.type === 'metric' || c.type === 'date') || derivedColumns[0];
-        if (firstSortable && !sortConfig.key) {
-            setSortConfig({ key: firstSortable.field, direction: 'desc' });
+        const currentDataKey = selectedSource?.id as SheetTab | undefined;
+        if (!currentDataKey || !SUPPORTED_INSIGHT_TABS.includes(currentDataKey)) {
+            return []; // Don't process unsupported tabs
         }
-        // Reset sort key if the column no longer exists
-        if (sortConfig.key && !derivedColumns.some(c => c.field === sortConfig.key)) {
-            setSortConfig({ key: '', direction: 'desc' });
+
+        // Use the type-guarded raw data for conversion
+        const firstRow = rawDataForSelectedTab.length > 0 ? rawDataForSelectedTab[0] : null;
+        if (!firstRow || !(
+            (currentDataKey === 'daily' && isAdMetric(firstRow)) ||
+            (currentDataKey === 'searchTerms' && isSearchTermMetric(firstRow)) ||
+            (currentDataKey === 'adGroups' && isAdGroupMetric(firstRow))
+        )) {
+            return []; // Mismatch detected
         }
-    }, [derivedColumns, sortConfig.key]); // Depend only on derivedColumns
 
-    // Detect if the dataset is likely time series
-    useEffect(() => {
-        const dateColumnExists = columns.some(col => col.type === 'date');
-        setIsTimeSeries(dateColumnExists);
-        if (dateColumnExists) {
-            console.log("[Insights] Detected 'date' column, treating as time series data. Outlier detection will be skipped.");
-        }
-    }, [columns]);
+        const validRawData = rawDataForSelectedTab as (AdMetric[] | SearchTermMetric[] | AdGroupMetric[]);
 
-    // Convert raw data to DataRowType using the derived columns
-    const baseData = useMemo(() => {
-        const rows = convertToDataRows(rawDataForSelectedTab, columns);
-        return rows.map(row => ({
-            ...row,
-            isOutlier: false
-        })) as DataRowType[];
-    }, [rawDataForSelectedTab, columns]);
+        // Convert raw data to DataRowType using the final columns derived in the effect
+        let processedData = convertToDataRows(validRawData, columns);
 
-    const totalRows = useMemo(() => baseData.length, [baseData]);
-
-    useEffect(() => {
-        resetState(true);
-        setPreviewRowCount(PREVIEW_ROW_OPTIONS[0]);
-    }, [selectedSource, resetState]);
-
-    // --- Filtering & Sorting (Operates on baseData) ---
-    const filteredAndSortedData = useMemo(() => {
-        if (!baseData || baseData.length === 0) return [];
-        let filtered = [...baseData];
-
-        // Apply regular filters
+        // Apply filters (only regular filters here)
         if (filters.length > 0) {
-            filtered = filtered.filter(item => {
+            processedData = processedData.filter(item => {
                 return filters.every(filter => {
                     if (!filter.field) return true;
                     const value = item[filter.field];
@@ -377,17 +487,100 @@ export function useDataInsights() {
                 });
             });
         }
+        // Reset outlier flag initially before detection runs
+        processedData.forEach(row => row.isOutlier = false);
 
-        // Apply outlier filter if enabled
-        if (excludeOutliers) {
-            filtered = filtered.filter(row => !row.isOutlier);
+        return processedData;
+
+    }, [rawDataForSelectedTab, filters, columns, selectedSource]); // Removed sortConfig, excludeOutliers, detectedOutliers
+
+    // --- Outlier Detection Effect (runs on baseProcessedData) ---
+    useEffect(() => {
+        // Skip outlier detection if conditions met
+        if (isTimeSeries || !columns.length || !baseProcessedData.length || isGeneratingLocalInsights || baseProcessedData.length < 4) {
+            setDetectedOutliers(null);
+            // Ensure flags are false if skipping
+            baseProcessedData.forEach(row => { row.isOutlier = false; });
+            return;
+        }
+
+        const CORE_OUTLIER_METRICS = ['impr', 'clicks', 'cost', 'conv', 'value'];
+
+        // Reset flags before recalculating
+        baseProcessedData.forEach(row => row.isOutlier = false);
+
+        const metricColumnsToCheck = columns.filter(col =>
+            col.type === 'metric' &&
+            CORE_OUTLIER_METRICS.includes(col.field.toLowerCase())
+        );
+
+        const outliersFound: EnhancedOutlierType[] = [];
+
+        metricColumnsToCheck.forEach(metricCol => {
+            const values = baseProcessedData.map(row => row[metricCol.field]).filter(v => typeof v === 'number' && !isNaN(v)) as number[];
+            if (values.length < 4) return;
+
+            const sum = values.reduce((acc, val) => acc + val, 0);
+            const mean = sum / values.length;
+            const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
+            const variance = squaredDiffs.reduce((acc, val) => acc + val, 0) / values.length;
+            const stdDev = Math.sqrt(variance);
+
+            const lowerBound = mean - 3 * stdDev;
+            const upperBound = mean + 3 * stdDev;
+
+            // Mark rows in baseProcessedData and collect outliers
+            baseProcessedData.forEach((row, rowIndex) => {
+                const value = row[metricCol.field];
+                if (typeof value === 'number' && !isNaN(value) && (value < lowerBound || value > upperBound)) {
+                    row.isOutlier = true; // Mark the row in the base data
+                    const reason = value < lowerBound
+                        ? `Value is significantly lower than average (${mean.toFixed(2)})`
+                        : `Value is significantly higher than average (${mean.toFixed(2)})`;
+                    outliersFound.push({
+                        id: `${metricCol.field}-${rowIndex}`,
+                        column: metricCol.name,
+                        field: metricCol.field,
+                        value: value,
+                        row: row, // Reference the row from baseProcessedData
+                        rowIndex: rowIndex, // Use original index from baseProcessedData
+                        rowData: row, // Keep for compatibility if needed elsewhere
+                        reason: reason,
+                        mean: mean,
+                        stdDev: stdDev
+                    });
+                }
+            });
+        });
+
+        // ... (unique outlier logic) ...
+        const uniqueRowIndices = new Set<number>();
+        const uniqueOutliers = outliersFound.filter(o => {
+            if (uniqueRowIndices.has(o.rowIndex)) {
+                return false;
+            }
+            uniqueRowIndices.add(o.rowIndex);
+            return true;
+        });
+
+        setDetectedOutliers(uniqueOutliers.length > 0 ? uniqueOutliers : null);
+
+    }, [baseProcessedData, columns, isGeneratingLocalInsights, isTimeSeries]); // Depends on baseProcessedData
+
+    // --- Final Filtered and Sorted Data (Applies outlier exclusion and sorting) ---
+    const filteredAndSortedData = useMemo(() => {
+        let finalData = [...baseProcessedData]; // Start with filtered data
+
+        // Apply outlier filter if enabled (using the isOutlier flag set by the effect)
+        if (excludeOutliers && detectedOutliers) { // Check detectedOutliers to ensure effect has run
+            finalData = finalData.filter(row => !row.isOutlier);
         }
 
         // Apply sorting
         if (sortConfig.key && columns.find(c => c.field === sortConfig.key)) {
             const sortColumn = columns.find(c => c.field === sortConfig.key);
             const sortType = sortColumn?.type;
-            filtered.sort((a, b) => {
+            finalData.sort((a, b) => {
                 const valA = a[sortConfig.key];
                 const valB = b[sortConfig.key];
                 let comparison = 0;
@@ -406,104 +599,28 @@ export function useDataInsights() {
                 return sortConfig.direction === 'asc' ? comparison : comparison * -1;
             });
         }
-        return filtered;
-    }, [baseData, filters, sortConfig, columns, excludeOutliers]); // Add excludeOutliers to dependencies
 
-    const filteredRows = useMemo(() => filteredAndSortedData.length, [filteredAndSortedData]);
+        return finalData;
 
-    // Update warning whenever filtered data changes
+        // Depends on baseProcessedData, sortConfig, excludeOutliers, and detectedOutliers (state)
+    }, [baseProcessedData, sortConfig, columns, excludeOutliers, detectedOutliers]);
+
+    // --- Total Rows Memo ---
+    const totalRows = useMemo(() => baseProcessedData.length, [baseProcessedData]); // Based on data *before* outlier exclusion
+
+    // --- Selected Source Change Effect ---
     useEffect(() => {
-        const warning = filteredAndSortedData.length > MAX_RECOMMENDED_INSIGHT_ROWS
-            ? `⚠️ You are analyzing ${filteredAndSortedData.length} rows, which exceeds the recommended maximum of ${MAX_RECOMMENDED_INSIGHT_ROWS} rows. This may result in higher API costs. Consider adding filters to reduce the dataset size.`
-            : null;
-        setRowCountWarning(warning);
-    }, [filteredAndSortedData.length]);
+        resetState(true);
+        setPreviewRowCount(PREVIEW_ROW_OPTIONS[0]);
+    }, [selectedSource, resetState]);
 
-    // --- Outlier Detection (runs on filtered data, marks rows with isOutlier flag) ---
-    useEffect(() => {
-        // Skip outlier detection if it's time series data or not enough data/columns
-        if (isTimeSeries || !columns.length || !baseData.length || isGeneratingLocalInsights || baseData.length < 4) {
-            setDetectedOutliers(null);
-            // Ensure all isOutlier flags are reset if skipping
-            baseData.forEach(row => { row.isOutlier = false; });
-            return;
-        }
 
-        // Define core metrics inside the effect
-        const CORE_OUTLIER_METRICS = ['impr', 'clicks', 'cost', 'conv', 'value'];
-
-        // Reset all isOutlier flags
-        baseData.forEach(row => {
-            row.isOutlier = false;
-        });
-
-        // Filter to only check core metrics for outliers
-        const metricColumnsToCheck = columns.filter(col =>
-            col.type === 'metric' &&
-            CORE_OUTLIER_METRICS.includes(col.field.toLowerCase())
-        );
-
-        const outliersFound: EnhancedOutlierType[] = [];
-
-        metricColumnsToCheck.forEach(metricCol => {
-            const values = baseData.map(row => row[metricCol.field]).filter(v => typeof v === 'number' && !isNaN(v)) as number[];
-            if (values.length < 4) return;
-
-            const sum = values.reduce((acc, val) => acc + val, 0);
-            const mean = sum / values.length;
-            const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
-            const variance = squaredDiffs.reduce((acc, val) => acc + val, 0) / values.length;
-            const stdDev = Math.sqrt(variance);
-
-            const lowerBound = mean - 3 * stdDev;
-            const upperBound = mean + 3 * stdDev;
-
-            baseData.forEach((row, rowIndex) => {
-                const value = row[metricCol.field];
-                if (typeof value === 'number' && !isNaN(value) && (value < lowerBound || value > upperBound)) {
-                    // Mark the row as an outlier
-                    row.isOutlier = true;
-
-                    const reason = value < lowerBound
-                        ? `Value is significantly lower than average (${mean.toFixed(2)})`
-                        : `Value is significantly higher than average (${mean.toFixed(2)})`;
-
-                    outliersFound.push({
-                        id: `${metricCol.field}-${rowIndex}`,
-                        column: metricCol.name,
-                        field: metricCol.field,
-                        value: value,
-                        row: row,
-                        rowIndex: rowIndex,
-                        rowData: row,
-                        reason: reason,
-                        mean: mean,
-                        stdDev: stdDev
-                    });
-                }
-            });
-        });
-
-        // Remove duplicate rows (same row might be an outlier for multiple metrics)
-        const uniqueRowIndices = new Set<number>();
-        const uniqueOutliers = outliersFound.filter(o => {
-            if (uniqueRowIndices.has(o.rowIndex)) {
-                return false;
-            }
-            uniqueRowIndices.add(o.rowIndex);
-            return true;
-        });
-
-        setDetectedOutliers(uniqueOutliers.length > 0 ? uniqueOutliers : null);
-
-    }, [baseData, columns, isGeneratingLocalInsights, isTimeSeries]); // Removed CORE_OUTLIER_METRICS dependency
-
-    // --- Data for Summary Calculation (depends on outlier state) ---
+    // --- Data for Summary --- relies on filteredAndSortedData
     const dataForSummary = useMemo(() => {
-        return filteredAndSortedData; // Now filteredAndSortedData already handles outlier exclusion
+        return filteredAndSortedData;
     }, [filteredAndSortedData]);
 
-    // --- Summary Calculation (runs on dataForSummary) ---
+    // --- Summary Calculation --- (depends on dataForSummary)
     const calculateSummary = useCallback((dataToSummarize: DataRowType[]) => {
         if (!columns.length || !dataToSummarize.length) {
             setLocalInsightsSummary(null);
@@ -572,19 +689,20 @@ export function useDataInsights() {
 
     }, [columns, excludeOutliers]);  // Add excludeOutliers since it's used in logging
 
-    // --- Effect to trigger Summary Calculation ---
+    // --- Summary Effect --- (depends on dataForSummary)
     useEffect(() => {
-        // Skip if nothing important changed
         if (!columns.length || !dataForSummary.length) {
+            // If no columns/data, ensure summary is nullified
+            if (localInsightsSummary !== null) {
+                setLocalInsightsSummary(null);
+            }
             return;
         }
-
-        // Calculate immediately without checking previous calculation
         calculateSummary(dataForSummary);
+    }, [dataForSummary, columns, calculateSummary, localInsightsSummary]); // Added localInsightsSummary to prevent re-calc if already set
 
-    }, [dataForSummary, columns, calculateSummary]);  // Keep all dependencies
 
-    // --- SIDE-BY-SIDE INSIGHTS GENERATION ---
+    // --- Side-by-Side Generation --- (depends on dataForSummary, totalRows)
     const handleGenerateSideBySideInsights = useCallback(async (prompt: string, providers: [LLMProvider, LLMProvider]) => {
         if (!prompt || !localInsightsSummary || !dataForSummary.length) {
             console.error("[Insights] Missing required data for side-by-side generation");
@@ -706,13 +824,14 @@ export function useDataInsights() {
         excludeOutliers,
         detectedOutliers,
         isTimeSeries,
-        dataForSummary,
-        totalRows,
+        dataForSummary, // Use dataForSummary
+        totalRows,      // Use totalRows
         selectedSource,
         filters
     ]);
 
-    // --- Single API Insights Generation ---
+
+    // --- Single API Insights Generation --- (depends on filteredAndSortedData)
     const handleOutlierDecisionAndGenerateApiInsights = useCallback(async (prompt: string) => {
         // If side by side is enabled, use that function instead, passing the current single provider
         if (showSideBySide) {
@@ -752,8 +871,8 @@ export function useDataInsights() {
                 : "Outliers were included.");
 
         if (excludeOutliers && detectedOutliers && detectedOutliers.length > 0) {
-            const outlierRowIndices = new Set(detectedOutliers.map(o => o.rowIndex));
-            dataForApi = filteredAndSortedData.filter((_, index) => !outlierRowIndices.has(index));
+            // Filter based on isOutlier flag, which is reliable now
+            dataForApi = filteredAndSortedData.filter(row => !row.isOutlier);
             outlierInfoForPrompt = `${detectedOutliers.length} potential outliers were excluded based on standard deviation analysis.`;
         }
 
@@ -803,7 +922,7 @@ export function useDataInsights() {
             setLoadingInsights(false);
         }
     }, [
-        filteredAndSortedData,
+        filteredAndSortedData, // Use final data
         detectedOutliers,
         selectedSource,
         filters,
@@ -811,7 +930,7 @@ export function useDataInsights() {
         isTimeSeries,
         llmProvider,
         showSideBySide,
-        dataForSummary.length,
+        dataForSummary.length, // Keep dataForSummary.length for checks if needed
         localInsightsSummary
     ]);
 
@@ -892,17 +1011,26 @@ export function useDataInsights() {
         }
     };
 
+    // --- Reset and Handlers ---
+    const handleSourceChange = useCallback((source: DataSourceType | null) => {
+        console.log("[Insights] Source changed to:", source?.id);
+        setSelectedSource(source);
+        lastDataKeyRef.current = null; // Force column recalculation
+        // Reset everything except columns (useEffect will handle columns)
+        resetState(true); // Reset filters etc.
+    }, [resetState]);
+
     return {
         dataSources,
         selectedSource,
-        setSelectedSource,
-        data: filteredAndSortedData as DataRowType[],
+        handleSourceChange,
         columns,
+        filteredAndSortedData,
+        totalRows,
         loading: globalLoading || isGeneratingLocalInsights,
         isGeneratingLocalInsights,
         loadingInsights,
-        totalRows,
-        filteredRows,
+        filteredRows: filteredAndSortedData.length,
         filters,
         sortConfig,
         localInsightsSummary,
@@ -921,13 +1049,9 @@ export function useDataInsights() {
         previewRowCount,
         setPreviewRowCount,
         isTimeSeries,
-        // LLM provider state
         llmProvider,
         setLlmProvider,
-        // Add model names
         modelNames: DEFAULT_MODELS,
-
-        // Side by side state
         showSideBySide,
         setShowSideBySide,
         geminiInsights,
@@ -937,13 +1061,9 @@ export function useDataInsights() {
         geminiError,
         openaiError,
         handleGenerateSideBySideInsights,
-
-        // Token usage data
         geminiTokenUsage,
         openaiTokenUsage,
         anthropicTokenUsage,
-
-        // Anthropic side-by-side
         anthropicInsights,
         loadingAnthropicInsights,
         anthropicError

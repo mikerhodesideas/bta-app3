@@ -178,8 +178,8 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
     const {
         dataSources,
         selectedSource,
-        setSelectedSource,
-        data,
+        handleSourceChange,
+        filteredAndSortedData,
         columns,
         loading,
         isGeneratingLocalInsights,
@@ -221,7 +221,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
         geminiTokenUsage,
         openaiTokenUsage,
         anthropicTokenUsage
-    } = useDataInsights(); // no assertion needed
+    } = useDataInsights();
 
     // Truncate environment API keys to first 15 characters for status display
     const apiKeyStatuses = {
@@ -268,7 +268,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
 
     // Set default chart values when data or columns change
     useEffect(() => {
-        if (columns.length > 0 && data.length > 0) {
+        if (columns.length > 0 && filteredAndSortedData.length > 0) {
             // Add explicit type ColumnType | undefined
             const dateColumn = columns.find((col: ColumnType) => col.type === 'date');
 
@@ -322,7 +322,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
 
             setGroupByValue('all');
         }
-    }, [columns, data]);
+    }, [columns, filteredAndSortedData]);
 
     // Processed data: collapse by date, optionally filter by one dimension value
     const processedData = useMemo(() => {
@@ -332,8 +332,8 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
         if (dimCol?.type === 'date' && groupingDimension) {
             // filter by selected group value (or include all if 'all')
             const rows = groupByValue === 'all'
-                ? data
-                : data.filter((r: DataRowType) => String(r[groupingDimension.field]) === groupByValue);
+                ? filteredAndSortedData
+                : filteredAndSortedData.filter((r: DataRowType) => String(r[groupingDimension.field]) === groupByValue);
             const map = new Map<string, any>();
             rows.forEach((row: DataRowType) => {
                 const raw = row[selectedDimension];
@@ -350,8 +350,8 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
             });
             return Array.from(map.values());
         }
-        return data;
-    }, [data, columns, selectedDimension, selectedMetric, selectedSecondaryMetric, groupByValue, groupingDimension]);
+        return filteredAndSortedData;
+    }, [filteredAndSortedData, columns, selectedDimension, selectedMetric, selectedSecondaryMetric, groupByValue, groupingDimension]);
 
     const addFilter = () => {
         if (filters.length >= 5) return;
@@ -434,7 +434,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                 <DataSourceFilterSection
                     dataSources={dataSources}
                     selectedSource={selectedSource}
-                    setSelectedSource={setSelectedSource}
+                    handleSourceChange={handleSourceChange}
                     loading={loading}
                     isGeneratingLocalInsights={isGeneratingLocalInsights}
                     columns={columns}
@@ -523,8 +523,8 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                     </TableHeader>
                                     <TableBody>
                                         {/* Add explicit type number for rowIndex */}
-                                        {data.slice(0, previewRowCount).map((row: DataRowType, rowIndex: number) => (
-                                            <TableRow key={rowIndex} className="hover:bg-gray-50 text-sm">
+                                        {filteredAndSortedData.slice(0, previewRowCount).map((row: DataRowType, rowIndex: number) => (
+                                            <TableRow key={`row-${rowIndex}-${row.id || rowIndex}`} className="hover:bg-gray-50 text-sm">
                                                 {/* Add explicit type ColumnType */}
                                                 {columns.map((column: ColumnType) => {
                                                     const value = column.field === 'isOutlier' ? undefined : row[column.field];
@@ -540,7 +540,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                                 })}
                                             </TableRow>
                                         ))}
-                                        {data.length === 0 && (
+                                        {filteredAndSortedData.length === 0 && (
                                             <TableRow>
                                                 <TableCell colSpan={columns.length} className="text-center py-6 text-gray-500 italic">No data matches the current filters.</TableCell>
                                             </TableRow>
@@ -548,7 +548,7 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                                     </TableBody>
                                 </Table>
                             </div>
-                            {data.length > previewRowCount && (
+                            {filteredAndSortedData.length > previewRowCount && (
                                 <p className="text-xs text-gray-500 mt-1 italic">Showing first {previewRowCount} rows. {filteredRows} rows total match filters.</p>
                             )}
                         </CardContent>
@@ -556,10 +556,10 @@ export const DataInsights: React.FC<DataInsightsProps> = ({ showVisualization = 
                 )}
 
                 {/* Data Visualization Section */}
-                {showVisualization && selectedSource && !loading && !apiError && columnsAvailable && data.length > 0 && (
+                {showVisualization && selectedSource && !loading && !apiError && columnsAvailable && filteredAndSortedData.length > 0 && (
                     <DataVisualizationSection
                         columns={columns}
-                        data={data}
+                        data={filteredAndSortedData}
                         chartType={chartType}
                         setChartType={setChartType}
                         selectedDimension={selectedDimension}
