@@ -1,7 +1,30 @@
 import { create } from 'zustand';
 import { fetchAllTabsData } from '@/lib/sheetsData';
-import type { TabData, AdMetric, SearchTermMetric, AdGroupMetric } from '@/lib/types';
+import type {
+    TabData,
+    AdMetric,
+    SearchTermMetric,
+    AdGroupMetric,
+    NegativeKeywordList,
+    CampaignNegative,
+    AdGroupNegative,
+    CampaignStatus,
+    SharedListKeyword,
+    LandingPageMetric
+} from '@/lib/types';
 import { SheetTab, SHEET_TABS } from '@/lib/config';
+
+// Define the union of all possible data types that can be stored per tab
+type PossibleTabData =
+    | AdMetric[]
+    | SearchTermMetric[]
+    | AdGroupMetric[]
+    | NegativeKeywordList[]
+    | CampaignNegative[]
+    | AdGroupNegative[]
+    | CampaignStatus[]
+    | SharedListKeyword[]
+    | LandingPageMetric[];
 
 // Export the interface
 export interface DataState {
@@ -10,7 +33,7 @@ export interface DataState {
     error: string | null;
     lastFetchedUrl: string | null; // Keep track of the URL used for the last fetch
     fetchData: (sheetUrl: string, forceRefresh?: boolean) => Promise<void>;
-    getDataForTab: (tab: SheetTab) => AdMetric[] | SearchTermMetric[] | AdGroupMetric[];
+    getDataForTab: (tab: SheetTab) => PossibleTabData;
 }
 
 export const useDataStore = create<DataState>((set, get) => ({
@@ -43,7 +66,7 @@ export const useDataStore = create<DataState>((set, get) => ({
         }
     },
 
-    getDataForTab: (tab: SheetTab) => {
+    getDataForTab: (tab: SheetTab): PossibleTabData => {
         // Ensure that accessing a non-existent tab returns an empty array
         return get().data[tab] || [];
     },
